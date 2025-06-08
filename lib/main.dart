@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
 import 'auth/login_page.dart';
+import 'screens/user/user_dashboard.dart';
+import 'screens/organization/organization_dashboard.dart';
 
 void main() {
-  runApp(MyApp());
+  runApp(const VolunteerVibeApp());
 }
 
-class MyApp extends StatelessWidget {
+class VolunteerVibeApp extends StatelessWidget {
+  const VolunteerVibeApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'VolunteerVibe',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        fontFamily: 'Roboto',
-      ),
-      home: LoginPage(),
+      home: OrganizationDashboard(),
       debugShowCheckedModeBanner: false,
     );
   }

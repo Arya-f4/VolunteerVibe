@@ -2,14 +2,10 @@ import 'dart:io' show Platform;
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:pocketbase/pocketbase.dart'; // Untuk ClientException dan PocketBase
+import 'package:pocketbase/pocketbase.dart'; 
+import 'register_page.dart'; 
+import 'forgot_password.dart'; 
 
-import 'register_page.dart'; // Pastikan file register_page.dart ada di lokasi yang benar
-import 'forgot_password.dart'; // Import halaman forgot password
-// import 'home_page.dart'; // Ganti dengan halaman utama aplikasi Anda
-
-// Inisialisasi PocketBase. Idealnya, ini dilakukan sekali secara global (misalnya menggunakan GetIt atau Provider).
-// Untuk kesederhanaan contoh ini, kita inisialisasi di sini. Pastikan URL ini sesuai.
 final pb = PocketBase('http://127.0.0.1:8090');
 
 // Kelas untuk transisi halaman kustom (Slide & Fade)
@@ -84,12 +80,8 @@ class _LoginPageState extends State<LoginPage> {
 
   // Fungsi untuk navigasi ke halaman utama setelah login berhasil
   void _navigateToHome() {
-    // Ganti HomePage() dengan widget halaman utama aplikasi Anda yang sebenarnya
-    // Navigator.pushReplacement(context, SlideFadePageRoute(page: const HomePage()));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Login berhasil! Mengarahkan ke halaman utama... (Implementasi Navigasi)'), backgroundColor: Colors.blue)
-    );
-    print('Navigasi ke HomePage (Ganti dengan implementasi navigasi Anda)');
+    // Mengarahkan ke HomePage menggunakan transisi kustom setelah login berhasil.
+    Navigator.pushReplacement(context, SlideFadePageRoute(page: const RegisterPage()));
   }
 
   Future<void> _loginUser() async {
@@ -148,15 +140,10 @@ class _LoginPageState extends State<LoginPage> {
     if (provider == 'google') setState(() => _isGoogleLoading = true);
     if (provider == 'facebook') setState(() => _isFacebookLoading = true);
 
-    print('--- [_signInWith$provider LoginPage] Dimulai. Timestamp: ${DateTime.now()}');
-
     try {
       final authData = await pb.collection('users').authWithOAuth2(
         provider,
         (url) async {
-          print('==============================================================');
-          print('>>> URL Callback OAuth2 $provider (Login): $url');
-          print('==============================================================');
           final uri = Uri.parse(url.toString());
           if (await canLaunchUrl(uri)) {
             bool launched;
@@ -173,7 +160,6 @@ class _LoginPageState extends State<LoginPage> {
       );
 
       if (!mounted) return;
-      print('--- [_signInWith$provider LoginPage] OAuth2 Sukses. Token: ${authData.token}, Record ID: ${authData.record?.id}');
       
       final userName = authData.record?.getStringValue('name') ??
           authData.meta?['name'] ??
@@ -187,21 +173,19 @@ class _LoginPageState extends State<LoginPage> {
       _navigateToHome();
     } catch (e, stackTrace) {
       if (!mounted) return;
-      print('>>> ERROR di _signInWith$provider (LoginPage): $e');
-      print('>>> Stack Trace: $stackTrace');
       String errorMessage = 'Login $provider gagal: ${e.toString()}';
       if (e is ClientException) {
         errorMessage = e.response['message']?.toString() ?? e.toString();
          if (e.response.containsKey('data') && e.response['data'] is Map) {
-            final errors = e.response['data'] as Map<String, dynamic>;
-            if (errors.isNotEmpty) {
-              final firstErrorField = errors.keys.first;
-              final fieldError = errors[firstErrorField];
-              if (fieldError is Map && fieldError.containsKey('message')) {
-                errorMessage = '${StringExtension(firstErrorField).capitalize()}: ${fieldError['message']}';
-              }
-            }
-          }
+           final errors = e.response['data'] as Map<String, dynamic>;
+           if (errors.isNotEmpty) {
+             final firstErrorField = errors.keys.first;
+             final fieldError = errors[firstErrorField];
+             if (fieldError is Map && fieldError.containsKey('message')) {
+               errorMessage = '${StringExtension(firstErrorField).capitalize()}: ${fieldError['message']}';
+             }
+           }
+         }
       }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(errorMessage),
@@ -218,7 +202,6 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _signInWithInstagram() async {
     if (_isLoading || _isGoogleLoading || _isFacebookLoading) return;
     setState(() => _isInstagramLoading = true);
-    print('--- [_signInWithInstagram LoginPage] Dimulai. Timestamp: ${DateTime.now()}');
     
     await Future.delayed(const Duration(seconds: 1)); // Simulasi
 
@@ -227,7 +210,6 @@ class _LoginPageState extends State<LoginPage> {
         content: Text('Login dengan Instagram belum diimplementasikan sepenuhnya.'),
         backgroundColor: Colors.orange,
       ));
-      print('--- [_signInWithInstagram LoginPage] Placeholder.');
       setState(() => _isInstagramLoading = false);
     }
   }
@@ -584,41 +566,3 @@ extension StringExtension on String {
     return "${this[0].toUpperCase()}${substring(1)}";
   }
 }
-
-/*
-// Anda perlu membuat HomePage() atau ganti dengan halaman tujuan setelah login
-// Contoh HomePage sederhana:
-
-class HomePage extends StatelessWidget {
-  const HomePage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    // Anda bisa mendapatkan data pengguna yang sedang login dari pb.authStore
-    // final user = pb.authStore.model;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Halaman Utama'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () {
-              pb.authStore.clear(); // Proses logout
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (context) => const LoginPage()),
-                (Route<dynamic> route) => false, // Hapus semua route sebelumnya
-              );
-            },
-          ),
-        ],
-      ),
-      body: Center(
-        // child: Text(user != null ? 'Selamat datang, ${user.data['name'] ?? user.email}!' : 'Selamat datang!'),
-        child: Text(pb.authStore.isValid ? 'Selamat datang, ${pb.authStore.model.data['name'] ?? pb.authStore.model.email}!' : 'Selamat datang!'),
-      ),
-    );
-  }
-}
-*/

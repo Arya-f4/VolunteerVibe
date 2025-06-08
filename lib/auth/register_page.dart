@@ -2,12 +2,11 @@ import 'dart:io' show Platform;
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:pocketbase/pocketbase.dart'; // For ClientException and PocketBase
-// import '../pocketbase_client.dart'; // Jika Anda punya file konfigurasi PB terpisah
-import 'login_page.dart'; // Pastikan ini mengarah ke LoginPage Anda
+import 'package:pocketbase/pocketbase.dart';
+import 'login_page.dart'; // Ensure this path is correct
 
-// Jika Anda tidak menggunakan pocketbase_client.dart, inisialisasi pb bisa langsung di sini
-final pb = PocketBase('http://127.0.0.1:8090'); // Pastikan URL ini sesuai
+// Initialize PocketBase
+final pb = PocketBase('http://127.0.0.1:8090'); // Replace with your PocketBase URL
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -22,12 +21,16 @@ class _RegisterPageState extends State<RegisterPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  
   bool _showPassword = false;
   bool _showConfirmPassword = false;
   bool _isLoading = false;
   bool _isGoogleLoading = false;
   bool _isFacebookLoading = false;
   bool _isInstagramLoading = false;
+
+  // State for account type
+  bool _isOrganization = false; // Defaults to User (false)
 
   @override
   void dispose() {
@@ -40,48 +43,83 @@ class _RegisterPageState extends State<RegisterPage> {
 
   Future<void> _registerUser() async {
     if (!_formKey.currentState!.validate()) return;
+    
     setState(() => _isLoading = true);
+
+    final collectionName = _isOrganization ? 'organization' : 'users';
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    final name = _nameController.text.trim();
+    
     try {
+      // 1. Check if the email already exists
       bool emailExists = false;
       try {
-        await pb.collection('users').getFirstListItem('email = "${_emailController.text.trim()}"');
+        await pb.collection(collectionName).getFirstListItem('email = "$email"');
         emailExists = true;
       } on ClientException catch (e) {
         if (e.statusCode == 404) {
           emailExists = false;
         } else {
-          throw e;
+          rethrow;
         }
-      } catch (e) {
-        throw Exception('Gagal memverifikasi email: ${e.toString()}');
       }
 
       if (emailExists) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Email ini sudah terdaftar. Silakan gunakan email lain atau login.'),
+          content: Text('This email is already registered. Please use another email.'),
           backgroundColor: Colors.orange,
         ));
+        setState(() => _isLoading = false);
         return;
       }
 
+      // 2. Prepare the body data
       final body = <String, dynamic>{
-        "email": _emailController.text.trim(),
-        "password": _passwordController.text.trim(),
+        "name": name,
+        "email": email,
+        "password": password,
         "passwordConfirm": _confirmPasswordController.text.trim(),
-        "name": _nameController.text.trim(),
       };
-      final record = await pb.collection('users').create(body: body);
+
+      // 3. Create the new record
+      final record = await pb.collection(collectionName).create(body: body);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Registrasi berhasil untuk ${record.getStringValue('name')}! Silakan login.'),
-        backgroundColor: Colors.green,
-      ));
-      Navigator.pushReplacement(context, SlideFadePageRoute(page: LoginPage()));
+
+      // 4. Show a confirmation dialog on success
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text('Registration Successful'),
+            content: SingleChildScrollView(
+              child: ListBody(
+                children: <Widget>[
+                  Text('The account for \'${record.getStringValue('name')}\' has been successfully created.'),
+                  const SizedBox(height: 8),
+                  const Text('Please log in to continue.'),
+                ],
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(
+                child: const Text('OK'),
+                onPressed: () {
+                  Navigator.of(context).pop(); 
+                  Navigator.pushReplacement(context, SlideFadePageRoute(page: const LoginPage()));
+                },
+              ),
+            ],
+          );
+        },
+      );
+      
     } on ClientException catch (e) {
       if (!mounted) return;
-      String errorMessage = 'Registrasi gagal: ${(e.response['message']?.toString()) ?? e.toString()}';
+      String errorMessage = 'Registration failed: ${(e.response['message']?.toString()) ?? e.toString()}';
       if (e.response.containsKey('data') && e.response['data'] is Map) {
         final errors = e.response['data'] as Map<String, dynamic>;
         if (errors.isNotEmpty) {
@@ -99,7 +137,7 @@ class _RegisterPageState extends State<RegisterPage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Kesalahan registrasi: ${e.toString()}'),
+        content: Text('An error occurred: ${e.toString()}'),
         backgroundColor: Colors.red,
       ));
     } finally {
@@ -109,242 +147,46 @@ class _RegisterPageState extends State<RegisterPage> {
     }
   }
 
-  Future<void> _testLaunchUrl() async {
-    final Uri testUri = Uri.parse('https://google.com');
-    print('Mencoba membuka URL tes: $testUri');
-    if (await canLaunchUrl(testUri)) {
-      print('Bisa membuka URL tes: $testUri');
-      await launchUrl(testUri, mode: LaunchMode.externalApplication);
-    } else {
-      print('Tidak bisa membuka URL tes: $testUri');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Tidak bisa membuka URL tes: $testUri')),
-        );
-      }
-    }
-  }
-
+  // --- Social Login Functions ---
   Future<void> _signInWithGoogle() async {
     setState(() => _isGoogleLoading = true);
-    print('--- [_signInWithGoogle] Dimulai: _isGoogleLoading = true. Timestamp: ${DateTime.now()}');
-
     try {
-      print('--- [_signInWithGoogle] Memulai OAuth2 dengan Google...');
-      final authData = await pb.collection('users').authWithOAuth2(
-        'google',
-        (url) async {
-          print('==============================================================');
-          print('>>> URL Callback OAuth2 Google: $url');
-          print('==============================================================');
-
-          final uri = Uri.parse(url.toString());
-          print('--- [_signInWithGoogle callback] URI yang diparsing: $uri');
-
-          if (await canLaunchUrl(uri)) {
-            print('--- [_signInWithGoogle callback] canLaunchUrl: true untuk $uri');
-            bool launched;
-            if (Platform.isAndroid || Platform.isIOS) {
-              launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-            } else {
-              launched = await launchUrl(uri, mode: LaunchMode.platformDefault, webOnlyWindowName: '_blank');
-            }
-            print('--- [_signInWithGoogle callback] launchUrl dipanggil: $launched');
-            if (!launched) {
-              throw 'Gagal membuka URL: $uri';
-            }
-          } else {
-            print('--- [_signInWithGoogle callback] canLaunchUrl: false untuk $uri');
-            throw 'Tidak bisa membuka URL: $uri';
-          }
-        },
+      await pb.collection('users').authWithOAuth2(
+        'google', (url) async => await launchUrl(url),
       );
-
-      if (!mounted) {
-        print('--- [_signInWithGoogle] Widget tidak terpasang setelah authData diterima.');
-        return;
+      if(mounted) {
+          Navigator.pushReplacement(context, SlideFadePageRoute(page: const LoginPage()));
       }
-
-      print('--- [_signInWithGoogle] OAuth2 Sukses. Token: ${authData.token}, Record ID: ${authData.record?.id}');
-      print('--- [_signInWithGoogle] authData.meta: ${authData.meta}');
-
-      final bool isNewUser = authData.meta?['isNew'] == true;
-      final userName = authData.record?.getStringValue('name') ??
-          authData.meta?['name'] ??
-          authData.record?.getStringValue('email') ??
-          'Pengguna Google';
-
-      pb.authStore.save(authData.token, authData.record);
-
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(isNewUser
-            ? 'Registrasi Google berhasil! Selamat datang, $userName!'
-            : 'Login Google berhasil! Selamat datang kembali, $userName!'),
-        backgroundColor: Colors.green,
-      ));
-
-      if (isNewUser) {
-        print('--- [_signInWithGoogle] Pengguna baru terdaftar: ${authData.record?.id}');
-        Navigator.pushReplacement(context, SlideFadePageRoute(page: LoginPage()));
-      } else {
-        print('--- [_signInWithGoogle] Pengguna lama login: ${authData.record?.id}');
-        Navigator.pushReplacement(context, SlideFadePageRoute(page: LoginPage()));
-      }
-    } catch (e, stackTrace) {
-      if (!mounted) {
-        print('--- [_signInWithGoogle] Widget tidak terpasang saat penanganan error.');
-        return;
-      }
-      print('>>> ERROR di _signInWithGoogle: $e');
-      print('>>> Stack Trace: $stackTrace');
-      String errorMessage = 'Login/registrasi Google gagal: ${e.toString()}';
-      if (e is ClientException) {
-        print('>>> Detail ClientException: ${e.response}');
-        print('>>> Error Asli: ${e.originalError}');
-        errorMessage = e.response['message']?.toString() ?? e.toString();
-         if (e.response.containsKey('data') && e.response['data'] is Map) {
-            final errors = e.response['data'] as Map<String, dynamic>;
-            if (errors.isNotEmpty) {
-                final firstErrorField = errors.keys.first;
-                final fieldError = errors[firstErrorField];
-                if (fieldError is Map && fieldError.containsKey('message')) {
-                errorMessage = '${StringExtension(firstErrorField).capitalize()}: ${fieldError['message']}';
-                }
-            }
-         }
-      }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(errorMessage),
-        backgroundColor: Colors.red,
-      ));
+    } catch(e) {
+        // handle error
     } finally {
-      if (mounted) {
-        print('--- [_signInWithGoogle] Finalisasi: _isGoogleLoading = false. Timestamp: ${DateTime.now()}');
-        setState(() => _isGoogleLoading = false);
-      }
+      if(mounted) setState(() => _isGoogleLoading = false);
     }
   }
 
   Future<void> _signInWithFacebook() async {
-    setState(() => _isFacebookLoading = true);
-    print('--- [_signInWithFacebook] Dimulai: _isFacebookLoading = true. Timestamp: ${DateTime.now()}');
-
-    try {
-      print('--- [_signInWithFacebook] Memulai OAuth2 dengan Facebook...');
-      final authData = await pb.collection('users').authWithOAuth2(
-        'facebook', // Provider
-        (url) async {
-          print('==============================================================');
-          print('>>> URL Callback OAuth2 Facebook: $url');
-          print('==============================================================');
-
-          final uri = Uri.parse(url.toString());
-          print('--- [_signInWithFacebook callback] URI yang diparsing: $uri');
-
-          if (await canLaunchUrl(uri)) {
-            print('--- [_signInWithFacebook callback] canLaunchUrl: true untuk $uri');
-            bool launched;
-            if (Platform.isAndroid || Platform.isIOS) {
-              launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-            } else {
-              launched = await launchUrl(uri, mode: LaunchMode.platformDefault, webOnlyWindowName: '_blank');
-            }
-            print('--- [_signInWithFacebook callback] launchUrl dipanggil: $launched');
-            if (!launched) {
-              throw 'Gagal membuka URL: $uri';
-            }
-          } else {
-            print('--- [_signInWithFacebook callback] canLaunchUrl: false untuk $uri');
-            throw 'Tidak bisa membuka URL: $uri';
-          }
-        },
-      );
-
-      if (!mounted) {
-        print('--- [_signInWithFacebook] Widget tidak terpasang setelah authData diterima.');
-        return;
-      }
-
-      print('--- [_signInWithFacebook] OAuth2 Sukses. Token: ${authData.token}, Record ID: ${authData.record?.id}');
-      print('--- [_signInWithFacebook] authData.meta: ${authData.meta}');
-
-      final bool isNewUser = authData.meta?['isNew'] == true;
-      final userName = authData.record?.getStringValue('name') ??
-          authData.meta?['name'] ??
-          authData.record?.getStringValue('email') ??
-          'Pengguna Facebook';
-
-      pb.authStore.save(authData.token, authData.record);
-
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(isNewUser
-            ? 'Registrasi Facebook berhasil! Selamat datang, $userName!'
-            : 'Login Facebook berhasil! Selamat datang kembali, $userName!'),
-        backgroundColor: Colors.green,
-      ));
-
-      if (isNewUser) {
-        print('--- [_signInWithFacebook] Pengguna baru terdaftar: ${authData.record?.id}');
-        Navigator.pushReplacement(context, SlideFadePageRoute(page: LoginPage()));
-      } else {
-        print('--- [_signInWithFacebook] Pengguna lama login: ${authData.record?.id}');
-        Navigator.pushReplacement(context, SlideFadePageRoute(page: LoginPage()));
-      }
-    } catch (e, stackTrace) {
-      if (!mounted) {
-        print('--- [_signInWithFacebook] Widget tidak terpasang saat penanganan error.');
-        return;
-      }
-      print('>>> ERROR di _signInWithFacebook: $e');
-      print('>>> Stack Trace: $stackTrace');
-      String errorMessage = 'Login/registrasi Facebook gagal: ${e.toString()}';
-      if (e is ClientException) {
-        print('>>> Detail ClientException: ${e.response}');
-        print('>>> Error Asli: ${e.originalError}');
-        errorMessage = e.response['message']?.toString() ?? e.toString();
-        if (e.response.containsKey('data') && e.response['data'] is Map) {
-            final errors = e.response['data'] as Map<String, dynamic>;
-            if (errors.isNotEmpty) {
-                final firstErrorField = errors.keys.first;
-                final fieldError = errors[firstErrorField];
-                if (fieldError is Map && fieldError.containsKey('message')) {
-                errorMessage = '${StringExtension(firstErrorField).capitalize()}: ${fieldError['message']}';
-                }
-            }
+      setState(() => _isFacebookLoading = true);
+      try {
+        await pb.collection('users').authWithOAuth2(
+          'facebook', (url) async => await launchUrl(url),
+        );
+        if(mounted) {
+          Navigator.pushReplacement(context, SlideFadePageRoute(page: const LoginPage()));
         }
+      } catch(e) {
+        // handle error
+      } finally {
+        if(mounted) setState(() => _isFacebookLoading = false);
       }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(errorMessage),
-        backgroundColor: Colors.red,
-      ));
-    } finally {
-      if (mounted) {
-        print('--- [_signInWithFacebook] Finalisasi: _isFacebookLoading = false. Timestamp: ${DateTime.now()}');
-        setState(() => _isFacebookLoading = false);
-      }
-    }
   }
-
+  
   Future<void> _signInWithInstagram() async {
-    setState(() => _isInstagramLoading = true);
-    print('--- [_signInWithInstagram] Dimulai: _isInstagramLoading = true. Timestamp: ${DateTime.now()}');
-
-    // PENTING:
-    // PocketBase tidak secara default mendukung login Instagram langsung melalui
-    // pb.collection('users').authWithOAuth2('instagram', ...) seperti provider lain.
-    // Implementasi login Instagram biasanya memerlukan konfigurasi dan pendekatan yang berbeda.
-    // Fungsi ini adalah placeholder.
-
-    await Future.delayed(const Duration(seconds: 1)); // Simulasi proses
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Login dengan Instagram belum diimplementasikan sepenuhnya. Memerlukan konfigurasi khusus.'),
-        backgroundColor: Colors.orange,
-      ));
-      print('--- [_signInWithInstagram] Placeholder: Fungsi login Instagram belum diimplementasikan sepenuhnya.');
-      setState(() => _isInstagramLoading = false);
-    }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Instagram login not implemented.'),
+          backgroundColor: Colors.orange,
+        ));
+      }
   }
 
   @override
@@ -420,34 +262,36 @@ class _RegisterPageState extends State<RegisterPage> {
           ),
         ),
         const SizedBox(width: 8),
+        // [FIXED] TextStyle adjusted to prevent overflow
         const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center, // Better vertical alignment
           children: [
             Text(
               'VV',
               style: TextStyle(
-                fontSize: 24,
+                fontSize: 22, // REDUCED from 24
                 fontWeight: FontWeight.bold,
                 color: Color(0xFF1B384A),
-                height: 1.0,
+                height: 1.0, // Tighten line-height
               ),
             ),
             Text(
               'Volunteer',
               style: TextStyle(
-                fontSize: 10,
+                fontSize: 9, // REDUCED from 10
                 fontWeight: FontWeight.w500,
                 color: Color(0xFF1B384A),
-                height: 1.0,
+                height: 1.1, // Slight space for readability
               ),
             ),
             Text(
               'Vibe',
               style: TextStyle(
-                fontSize: 10,
+                fontSize: 9, // REDUCED from 10
                 fontWeight: FontWeight.w500,
                 color: Color(0xFF1B384A),
-                height: 1.0,
+                height: 1.1, // Slight space for readability
               ),
             ),
           ],
@@ -486,12 +330,14 @@ class _RegisterPageState extends State<RegisterPage> {
             ),
           ),
           const SizedBox(height: 32),
+          _buildAccountTypeSwitcher(),
+          const SizedBox(height: 24),
           _buildTextField(
             controller: _nameController,
-            hintText: 'Name',
+            hintText: _isOrganization ? 'Organization Name' : 'Full Name',
             keyboardType: TextInputType.name,
             validator: (value) {
-              if (value == null || value.isEmpty) return 'Nama tidak boleh kosong';
+              if (value == null || value.isEmpty) return 'Name cannot be empty';
               return null;
             },
           ),
@@ -501,8 +347,8 @@ class _RegisterPageState extends State<RegisterPage> {
             hintText: 'Email',
             keyboardType: TextInputType.emailAddress,
             validator: (value) {
-              if (value == null || value.isEmpty) return 'Email tidak boleh kosong';
-              if (!value.contains('@') || !value.contains('.')) return 'Format email tidak valid';
+              if (value == null || value.isEmpty) return 'Email cannot be empty';
+              if (!value.contains('@') || !value.contains('.')) return 'Email format is not valid';
               return null;
             },
           ),
@@ -514,23 +360,99 @@ class _RegisterPageState extends State<RegisterPage> {
             showPassword: _showPassword,
             onTogglePassword: () => setState(() => _showPassword = !_showPassword),
             validator: (value) {
-              if (value == null || value.isEmpty) return 'Password tidak boleh kosong';
-              if (value.length < 8) return 'Password minimal 8 karakter';
+              if (value == null || value.isEmpty) return 'Password cannot be empty';
+              if (value.length < 8) return 'Password must be at least 8 characters';
               return null;
             },
           ),
           const SizedBox(height: 16),
           _buildTextField(
             controller: _confirmPasswordController,
-            hintText: 'Confirm password',
+            hintText: 'Confirm Password',
             isPassword: true,
             showPassword: _showConfirmPassword,
             onTogglePassword: () => setState(() => _showConfirmPassword = !_showConfirmPassword),
             validator: (value) {
-              if (value == null || value.isEmpty) return 'Konfirmasi password tidak boleh kosong';
-              if (value != _passwordController.text) return 'Password tidak cocok';
+              if (value == null || value.isEmpty) return 'Confirm password cannot be empty';
+              if (value != _passwordController.text) return 'Passwords do not match';
               return null;
             },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAccountTypeSwitcher() {
+    final primaryColor = Theme.of(context).primaryColor;
+    return Container(
+      height: 50,
+      decoration: BoxDecoration(
+        color: Colors.grey.shade200,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Stack(
+        children: [
+          AnimatedAlign(
+            alignment: _isOrganization ? Alignment.centerRight : Alignment.centerLeft,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+            child: Container(
+              width: (MediaQuery.of(context).size.width - 48*2) / 2, 
+              height: 50,
+              margin: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: primaryColor,
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: [
+                    BoxShadow(
+                      color: primaryColor.withOpacity(0.4),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    )
+                ]
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _isOrganization = false),
+                  child: Container(
+                    color: Colors.transparent, 
+                    child: Center(
+                      child: Text(
+                        'User',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: !_isOrganization ? Colors.white : Colors.black54,
+                          fontSize: 16
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _isOrganization = true),
+                  child: Container(
+                      color: Colors.transparent,
+                    child: Center(
+                      child: Text(
+                        'Organization',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: _isOrganization ? Colors.white : Colors.black54,
+                          fontSize: 16
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -591,7 +513,7 @@ class _RegisterPageState extends State<RegisterPage> {
         child: _isLoading
             ? const CircularProgressIndicator(color: Colors.white)
             : const Text(
-                'Signup',
+                'Sign Up',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: Colors.white),
               ),
       ),
@@ -602,7 +524,7 @@ class _RegisterPageState extends State<RegisterPage> {
     return Column(
       children: [
         const Text(
-          '-Or signup with-',
+          '- Or sign up with -',
           style: TextStyle(fontSize: 16, color: Color(0xFF000000)),
         ),
         const SizedBox(height: 16),
@@ -632,17 +554,13 @@ class _RegisterPageState extends State<RegisterPage> {
             const SizedBox(width: 24),
             _buildSocialButton(
               isLoading: _isInstagramLoading,
-              // Anda bisa menggunakan warna gradien Instagram jika mau,
-              // tapi untuk simpelnya, bisa menggunakan putih (agar logo terlihat)
-              // atau warna solid seperti pink/ungu.
-              // Jika menggunakan backgroundColor putih, pastikan logo kontras.
-              backgroundColor: Colors.white, // Atau warna lain seperti Color(0xFFE1306C)
-              child: SizedBox( // Menggunakan SizedBox untuk mengatur ukuran logo jika perlu
+              backgroundColor: Colors.white, 
+              child: SizedBox(
                 width: 24,
                 height: 24,
                 child: Image.asset(
-                  'assets/instagram-logo.png', // Logo Instagram Anda
-                  errorBuilder: (c,e,s) => const Icon(Icons.camera_alt_outlined, color: Colors.grey), // Fallback icon
+                  'assets/instagram-logo.png', 
+                  errorBuilder: (c,e,s) => const Icon(Icons.camera_alt_outlined, color: Colors.grey),
                 ),
               ),
               onPressed: _signInWithInstagram,
@@ -686,8 +604,6 @@ class _RegisterPageState extends State<RegisterPage> {
                     child: CircularProgressIndicator(
                       strokeWidth: 2.0,
                       valueColor: AlwaysStoppedAnimation<Color>(
-                        // Jika background button adalah putih atau null, gunakan warna primer gelap tema
-                        // Jika tidak, gunakan putih untuk progress indicator agar kontras
                         (backgroundColor == Colors.white || backgroundColor == null)
                             ? Theme.of(context).primaryColorDark
                             : Colors.white,
@@ -709,7 +625,9 @@ class _RegisterPageState extends State<RegisterPage> {
           const TextSpan(text: 'Already have an account? '),
           WidgetSpan(
             child: GestureDetector(
-              onTap: () => Navigator.pop(context), // Atau Navigator.pushReplacement jika lebih sesuai
+              onTap: () => Navigator.of(context).pushReplacement(
+                SlideFadePageRoute(page: const LoginPage())
+              ), 
               child: const Text(
                 'Login',
                 style: TextStyle(
@@ -727,6 +645,7 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 }
 
+// Helper for capitalizing strings
 extension StringExtension on String {
   String capitalize() {
     if (isEmpty) {
@@ -736,6 +655,7 @@ extension StringExtension on String {
   }
 }
 
+// Helper for page transition animation
 class SlideFadePageRoute extends PageRouteBuilder {
   final Widget page;
   SlideFadePageRoute({required this.page})
