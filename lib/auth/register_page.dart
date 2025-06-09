@@ -4,9 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:pocketbase/pocketbase.dart';
 import 'login_page.dart'; // Ensure this path is correct
+import 'package:volunteervibe/pocketbase_client.dart';
 
-// Initialize PocketBase
-final pb = PocketBase('http://127.0.0.1:8090'); // Replace with your PocketBase URL
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});

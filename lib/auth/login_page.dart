@@ -2,11 +2,19 @@ import 'dart:io' show Platform;
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:pocketbase/pocketbase.dart'; 
-import 'register_page.dart'; 
-import 'forgot_password.dart'; 
+import 'package:pocketbase/pocketbase.dart';
 
-final pb = PocketBase('http://127.0.0.1:8090');
+// Halaman-halaman lain yang di-import
+import 'register_page.dart';
+import 'forgot_password.dart';
+import 'package:volunteervibe/screens/home_screen.dart';
+import 'package:volunteervibe/screens/organization_dashboard.dart';
+
+// TAMBAHKAN: Import file pocketbase_client.dart untuk menggunakan instance pb global.
+import 'package:volunteervibe/pocketbase_client.dart';
+
+// HAPUS: Baris ini tidak lagi diperlukan karena kita akan menggunakan instance dari pocketbase_client.dart
+// final pb = PocketBase('http://127.0.0.1:8090');
 
 // Kelas untuk transisi halaman kustom (Slide & Fade)
 class SlideFadePageRoute<T> extends PageRouteBuilder<T> {
@@ -17,41 +25,23 @@ class SlideFadePageRoute<T> extends PageRouteBuilder<T> {
     required this.page,
     this.duration = const Duration(milliseconds: 400),
   }) : super(
-          pageBuilder: (
-            BuildContext context,
-            Animation<double> animation,
-            Animation<double> secondaryAnimation,
-          ) =>
-              page,
+          pageBuilder: (context, animation, secondaryAnimation) => page,
           transitionDuration: duration,
           reverseTransitionDuration: duration,
-          transitionsBuilder: (
-            BuildContext context,
-            Animation<double> animation,
-            Animation<double> secondaryAnimation,
-            Widget child,
-          ) {
-            final CurvedAnimation curvedAnimation = CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeInOutCubic,
-            );
-            const Offset beginSlide = Offset(1.0, 0.0);
-            const Offset endSlide = Offset.zero;
-            final Tween<Offset> slideTween = Tween(begin: beginSlide, end: endSlide);
-            final Animation<Offset> slideAnimation = slideTween.animate(curvedAnimation);
-            final Tween<double> fadeTween = Tween(begin: 0.0, end: 1.0);
-            final Animation<double> fadeAnimation = fadeTween.animate(curvedAnimation);
-
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            final curvedAnimation = CurvedAnimation(parent: animation, curve: Curves.easeInOutCubic);
+            final slideAnimation = Tween(begin: const Offset(1.0, 0.0), end: Offset.zero).animate(curvedAnimation);
+            final fadeAnimation = Tween(begin: 0.0, end: 1.0).animate(curvedAnimation);
             return FadeTransition(
               opacity: fadeAnimation,
-              child: SlideTransition(
-                position: slideAnimation,
-                child: child,
-              ),
+              child: SlideTransition(position: slideAnimation, child: child),
             );
           },
         );
 }
+
+// Enum untuk membedakan jenis pengguna
+enum UserType { user, organization }
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -66,10 +56,12 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
 
   bool _showPassword = false;
-  bool _isLoading = false; // Untuk login form standar
+  bool _isLoading = false;
   bool _isGoogleLoading = false;
   bool _isFacebookLoading = false;
   bool _isInstagramLoading = false;
+
+  UserType _selectedUserType = UserType.user;
 
   @override
   void dispose() {
@@ -78,44 +70,38 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  // Fungsi untuk navigasi ke halaman utama setelah login berhasil
-  void _navigateToHome() {
-    // Mengarahkan ke HomePage menggunakan transisi kustom setelah login berhasil.
-    Navigator.pushReplacement(context, SlideFadePageRoute(page: const RegisterPage()));
-  }
-
   Future<void> _loginUser() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_isGoogleLoading || _isFacebookLoading || _isInstagramLoading) return; // Jangan proses jika login sosial berjalan
+    if (_isGoogleLoading || _isFacebookLoading || _isInstagramLoading) return;
 
     setState(() => _isLoading = true);
 
+    final collection = _selectedUserType == UserType.user ? 'users' : 'organization';
+
     try {
-      final authData = await pb.collection('users').authWithPassword(
+      final authData = await pb.collection(collection).authWithPassword(
             _emailController.text.trim(),
             _passwordController.text.trim(),
           );
 
       if (!mounted) return;
+
+      final recordName = authData.record?.getStringValue('name') ?? _emailController.text.trim();
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Login berhasil! Selamat datang kembali, ${authData.record?.getStringValue('name') ?? _emailController.text.trim()}!'),
+        content: Text('Login berhasil! Selamat datang kembali, $recordName!'),
         backgroundColor: Colors.green,
       ));
-      _navigateToHome();
+
+      if (_selectedUserType == UserType.user) {
+        Navigator.pushReplacementNamed(context, '/home');
+      } else {
+        Navigator.pushReplacementNamed(context, '/organization');
+      }
     } on ClientException catch (e) {
       if (!mounted) return;
       String errorMessage = 'Login gagal: ${(e.response['message']?.toString()) ?? e.toString()}';
       if (e.statusCode == 400) {
         errorMessage = 'Email atau password salah. Silakan coba lagi.';
-      } else if (e.response.containsKey('data') && e.response['data'] is Map) {
-        final errors = e.response['data'] as Map<String, dynamic>;
-        if (errors.isNotEmpty) {
-          final firstErrorField = errors.keys.first;
-          final fieldError = errors[firstErrorField];
-          if (fieldError is Map && fieldError.containsKey('message')) {
-            errorMessage = '${StringExtension(firstErrorField).capitalize()}: ${fieldError['message']}';
-          }
-        }
       }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(errorMessage),
@@ -135,7 +121,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _signInWithProvider(String provider) async {
-    if (_isLoading) return; // Jangan proses jika login standar berjalan
+    if (_isLoading) return;
 
     if (provider == 'google') setState(() => _isGoogleLoading = true);
     if (provider == 'facebook') setState(() => _isFacebookLoading = true);
@@ -146,13 +132,8 @@ class _LoginPageState extends State<LoginPage> {
         (url) async {
           final uri = Uri.parse(url.toString());
           if (await canLaunchUrl(uri)) {
-            bool launched;
-            if (Platform.isAndroid || Platform.isIOS) {
-              launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
-            } else {
-              launched = await launchUrl(uri, mode: LaunchMode.platformDefault, webOnlyWindowName: '_blank');
-            }
-            if (!launched) throw 'Gagal membuka URL: $uri';
+            final mode = Platform.isAndroid || Platform.isIOS ? LaunchMode.externalApplication : LaunchMode.platformDefault;
+            if (!await launchUrl(uri, mode: mode)) throw 'Gagal membuka URL: $uri';
           } else {
             throw 'Tidak bisa membuka URL: $uri';
           }
@@ -160,35 +141,18 @@ class _LoginPageState extends State<LoginPage> {
       );
 
       if (!mounted) return;
-      
-      final userName = authData.record?.getStringValue('name') ??
-          authData.meta?['name'] ??
-          authData.record?.getStringValue('email') ??
-          'Pengguna $provider';
+
+      final userName = authData.record?.getStringValue('name') ?? authData.meta?['name'] ?? 'Pengguna $provider';
 
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Login $provider berhasil! Selamat datang kembali, $userName!'),
         backgroundColor: Colors.green,
       ));
-      _navigateToHome();
-    } catch (e, stackTrace) {
+      Navigator.pushReplacementNamed(context, '/home');
+    } catch (e) {
       if (!mounted) return;
-      String errorMessage = 'Login $provider gagal: ${e.toString()}';
-      if (e is ClientException) {
-        errorMessage = e.response['message']?.toString() ?? e.toString();
-         if (e.response.containsKey('data') && e.response['data'] is Map) {
-           final errors = e.response['data'] as Map<String, dynamic>;
-           if (errors.isNotEmpty) {
-             final firstErrorField = errors.keys.first;
-             final fieldError = errors[firstErrorField];
-             if (fieldError is Map && fieldError.containsKey('message')) {
-               errorMessage = '${StringExtension(firstErrorField).capitalize()}: ${fieldError['message']}';
-             }
-           }
-         }
-      }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(errorMessage),
+        content: Text('Login $provider gagal: ${e.toString()}'),
         backgroundColor: Colors.red,
       ));
     } finally {
@@ -202,12 +166,12 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _signInWithInstagram() async {
     if (_isLoading || _isGoogleLoading || _isFacebookLoading) return;
     setState(() => _isInstagramLoading = true);
-    
-    await Future.delayed(const Duration(seconds: 1)); // Simulasi
+
+    await Future.delayed(const Duration(seconds: 1));
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Login dengan Instagram belum diimplementasikan sepenuhnya.'),
+        content: Text('Login dengan Instagram belum diimplementasikan.'),
         backgroundColor: Colors.orange,
       ));
       setState(() => _isInstagramLoading = false);
@@ -233,11 +197,11 @@ class _LoginPageState extends State<LoginPage> {
 
   Widget _buildTopSection() {
     return SizedBox(
-      height: MediaQuery.of(context).size.height * 0.5, // Adjusted height
+      height: MediaQuery.of(context).size.height * 0.5,
       child: Stack(
         children: [
           Container(
-            height: MediaQuery.of(context).size.height * 0.45, // Adjusted height
+            height: MediaQuery.of(context).size.height * 0.45,
             decoration: const BoxDecoration(
               color: Color(0xFF1B384A),
               borderRadius: BorderRadius.only(
@@ -248,7 +212,7 @@ class _LoginPageState extends State<LoginPage> {
             child: Stack(
               children: [
                 Positioned(
-                  bottom: 70, // Adjusted position
+                  bottom: 70,
                   left: 50,
                   right: 50,
                   child: CustomPaint(
@@ -265,8 +229,8 @@ class _LoginPageState extends State<LoginPage> {
             right: 0,
             child: Center(
               child: Container(
-                width: 100, // Adjusted size
-                height: 100, // Adjusted size
+                width: 100,
+                height: 100,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   shape: BoxShape.circle,
@@ -281,7 +245,7 @@ class _LoginPageState extends State<LoginPage> {
                 child: Center(
                   child: Hero(
                     tag: 'appLogoHero',
-                    child: _buildLogo(scale: 0.8), // Slightly smaller logo
+                    child: _buildLogo(scale: 0.8),
                   ),
                 ),
               ),
@@ -292,7 +256,7 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  Widget _buildLogo({double scale = 1.0}) { // Added scale parameter
+  Widget _buildLogo({double scale = 1.0}) {
     return Transform.scale(
       scale: scale,
       child: Row(
@@ -313,11 +277,13 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
                 Positioned(
-                  top: 3, right: 3,
+                  top: 3,
+                  right: 3,
                   child: Container(width: 8, height: 8, decoration: BoxDecoration(color: const Color(0xFFF3AB3F), borderRadius: BorderRadius.circular(1))),
                 ),
                 Positioned(
-                  top: 9, right: 3,
+                  top: 9,
+                  right: 3,
                   child: Container(width: 8, height: 6, decoration: BoxDecoration(color: const Color(0xFFEB4335), borderRadius: BorderRadius.circular(1))),
                 ),
               ],
@@ -338,34 +304,70 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-
   Widget _buildBottomSection() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24.0),
       child: Column(
         children: [
-          const SizedBox(height: 30), // Adjusted spacing
+          const SizedBox(height: 30),
           const Align(
             alignment: Alignment.centerLeft,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('HEY!', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF1B384A))), // Adjusted size
-                Text('LOGIN NOW', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF1B384A))), // Adjusted size
+                Text('HEY!', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF1B384A))),
+                Text('LOGIN NOW', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF1B384A))),
               ],
             ),
           ),
-          const SizedBox(height: 24), // Adjusted spacing
+          const SizedBox(height: 24),
+          _buildUserTypeSelector(),
+          const SizedBox(height: 24),
           _buildForm(),
-          const SizedBox(height: 20), // Adjusted spacing
+          const SizedBox(height: 20),
           _buildLoginButton(),
-          const SizedBox(height: 12), // Adjusted spacing
+          const SizedBox(height: 12),
           _buildForgotPassword(),
-          const SizedBox(height: 24), // Adjusted spacing
-          _buildSocialLogin(),
-          const SizedBox(height: 20), // Adjusted spacing
+          const SizedBox(height: 24),
+          if (_selectedUserType == UserType.user) ...[
+            _buildSocialLogin(),
+            const SizedBox(height: 20),
+          ],
           _buildRegisterLink(),
-          const SizedBox(height: 24), // Adjusted spacing
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUserTypeSelector() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFFE9EEF2),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: ToggleButtons(
+        isSelected: [
+          _selectedUserType == UserType.user,
+          _selectedUserType == UserType.organization,
+        ],
+        onPressed: (index) {
+          setState(() {
+            _selectedUserType = (index == 0) ? UserType.user : UserType.organization;
+          });
+        },
+        color: const Color(0xFF828282),
+        selectedColor: Colors.white,
+        fillColor: const Color(0xFF1B384A),
+        splashColor: const Color(0xFF1B384A).withOpacity(0.12),
+        borderRadius: BorderRadius.circular(16),
+        borderWidth: 0,
+        renderBorder: false,
+        constraints: BoxConstraints.expand(width: (MediaQuery.of(context).size.width / 2) - 25, height: 48),
+        children: const [
+          Text('User', style: TextStyle(fontWeight: FontWeight.bold)),
+          Text('Organization', style: TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );
