@@ -1,46 +1,72 @@
+// File: lib/screens/profile_screen.dart
+
 import 'package:flutter/material.dart';
+import 'package:pocketbase/pocketbase.dart';
+import 'package:volunteervibe/services/pocketbase_service.dart';
 
-// Tambahkan import untuk screen baru di bagian atas file
-import 'social_sharing_screen.dart';
-import 'volunteer_hours_screen.dart';
+import 'home_screen.dart';
+import 'search_screen.dart';
 import 'gamification_screen.dart';
+import 'volunteer_hours_screen.dart';
 import 'organization_register_screen.dart';
+import '../auth/login_page.dart';
+class ProfileScreen extends StatefulWidget {
+  @override
+  _ProfileScreenState createState() => _ProfileScreenState();
+}
 
-class ProfileScreen extends StatelessWidget {
-  final List<Map<String, dynamic>> achievements = [
-    {
-      'title': 'First Timer',
-      'description': 'Complete your first volunteer event',
-      'icon': Icons.star,
-      'color': Color(0xFFFFD700),
-      'earned': true,
-    },
-    {
-      'title': 'Community Helper',
-      'description': 'Complete 5 volunteer events',
-      'icon': Icons.people,
-      'color': Color(0xFF6C63FF),
-      'earned': true,
-    },
-    {
-      'title': 'Environmental Warrior',
-      'description': 'Complete 3 environmental events',
-      'icon': Icons.eco,
-      'color': Color(0xFF10B981),
-      'earned': false,
-    },
-    {
-      'title': 'Time Master',
-      'description': 'Log 50+ volunteer hours',
-      'icon': Icons.access_time,
-      'color': Color(0xFFED8936),
-      'earned': true,
-    },
+class _ProfileScreenState extends State<ProfileScreen> {
+  // Service
+  final PocketBaseService _pbService = PocketBaseService();
+
+  // State
+  bool _isLoading = true;
+  String _userName = 'Guest';
+  String _userEmail = '...';
+  String? _userAvatarUrl;
+  int _userPoints = 0;
+  int _eventsJoined = 0;
+
+  final List<Map<String, dynamic>> _achievements = [
+    {'title': 'First Timer','icon': Icons.star, 'color': Color(0xFFFFD700), 'earned': true},
+    {'title': 'Community Helper','icon': Icons.people, 'color': Color(0xFF6C63FF), 'earned': true},
+    {'title': 'Time Master', 'icon': Icons.access_time_filled, 'color': Color(0xFFED8936), 'earned': true},
+    {'title': 'Environmental Warrior','icon': Icons.eco, 'color': Color(0xFF10B981), 'earned': false},
   ];
+  
+  @override
+  void initState() {
+    super.initState();
+    _loadProfileData();
+  }
+
+  Future<void> _loadProfileData() async {
+    setState(() => _isLoading = true);
+    final userRecord = _pbService.getCurrentUser();
+    if (userRecord != null) {
+      _userName = userRecord.getStringValue('name', 'Guest');
+      // --- PERBAIKAN DI SINI ---
+      _userEmail = userRecord.getStringValue('email'); // Menggunakan getStringValue
+      _userPoints = userRecord.getIntValue('points', 0);
+      final avatarFilename = userRecord.getStringValue('avatar');
+      _userAvatarUrl = _pbService.getFileUrl(userRecord, avatarFilename);
+      _eventsJoined = await _pbService.getEventsJoinedCount(userRecord.id);
+    }
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Color(0xFFF8FAFC),
+      appBar: AppBar(
+        title: Text('My Profile', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
+        backgroundColor: Colors.white,
+        elevation: 1,
+        automaticallyImplyLeading: false,
+      ),
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
@@ -55,7 +81,7 @@ class ProfileScreen extends StatelessWidget {
                     SizedBox(height: 32),
                     _buildAchievementsSection(),
                     SizedBox(height: 32),
-                    _buildRecentActivities(),
+                    _buildOptions(context)
                   ],
                 ),
               ),
@@ -63,6 +89,7 @@ class ProfileScreen extends StatelessWidget {
           ],
         ),
       ),
+      bottomNavigationBar: _buildBottomNavigationBar(),
     );
   }
 
@@ -70,58 +97,22 @@ class ProfileScreen extends StatelessWidget {
     return Column(
       children: [
         Container(
-          width: 120,
-          height: 120,
+          width: 120, height: 120,
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF6C63FF), Color(0xFF9F7AEA)],
-            ),
+            gradient: LinearGradient(colors: [Color(0xFF6C63FF), Color(0xFF9F7AEA)], begin: Alignment.topLeft, end: Alignment.bottomRight),
             borderRadius: BorderRadius.circular(60),
-            boxShadow: [
-              BoxShadow(
-                color: Color(0xFF6C63FF).withOpacity(0.3),
-                blurRadius: 20,
-                offset: Offset(0, 10),
-              ),
-            ],
+            boxShadow: [BoxShadow(color: Color(0xFF6C63FF).withOpacity(0.3), blurRadius: 20, offset: Offset(0, 10))],
           ),
-          child: Icon(
-            Icons.person,
-            color: Colors.white,
-            size: 60,
+          child: CircleAvatar(
+            radius: 55,
+            backgroundColor: Colors.transparent,
+            backgroundImage: _userAvatarUrl != null ? NetworkImage(_userAvatarUrl!) : null,
+            child: _userAvatarUrl == null ? Icon(Icons.person, color: Colors.white, size: 60) : null,
           ),
         ),
         SizedBox(height: 16),
-        Text(
-          'Alex Johnson',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF2D3748),
-          ),
-        ),
-        Text(
-          'alex.johnson@email.com',
-          style: TextStyle(
-            fontSize: 16,
-            color: Color(0xFF718096),
-          ),
-        ),
-        SizedBox(height: 8),
-        Container(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: Color(0xFF6C63FF).withOpacity(0.1),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
-            'Active Volunteer',
-            style: TextStyle(
-              color: Color(0xFF6C63FF),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
+        Text(_userName, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
+        Text(_userEmail, style: TextStyle(fontSize: 16, color: Color(0xFF718096))),
       ],
     );
   }
@@ -132,65 +123,17 @@ class ProfileScreen extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 15,
-            offset: Offset(0, 5),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: Offset(0, 5))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'My Impact',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF2D3748),
-            ),
-          ),
+          Text('My Impact', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
           SizedBox(height: 20),
           Row(
             children: [
-              Expanded(
-                child: _buildStatItem(
-                  '1,250',
-                  'Total Points',
-                  Icons.star,
-                  Color(0xFFFFD700),
-                ),
-              ),
-              Expanded(
-                child: _buildStatItem(
-                  '12',
-                  'Events Joined',
-                  Icons.event,
-                  Color(0xFF6C63FF),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _buildStatItem(
-                  '48',
-                  'Hours Logged',
-                  Icons.access_time,
-                  Color(0xFF10B981),
-                ),
-              ),
-              Expanded(
-                child: _buildStatItem(
-                  '4',
-                  'Badges Earned',
-                  Icons.emoji_events,
-                  Color(0xFFED8936),
-                ),
-              ),
+              Expanded(child: _buildStatItem(_userPoints.toString(), 'Total Points', Icons.star, Colors.orange)),
+              Expanded(child: _buildStatItem(_eventsJoined.toString(), 'Events Joined', Icons.event, Color(0xFF6C63FF))),
             ],
           ),
         ],
@@ -201,71 +144,33 @@ class ProfileScreen extends StatelessWidget {
   Widget _buildStatItem(String value, String label, IconData icon, Color color) {
     return Column(
       children: [
-        Container(
-          width: 50,
-          height: 50,
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(25),
-          ),
-          child: Icon(icon, color: color, size: 24),
-        ),
+        CircleAvatar(radius: 25, backgroundColor: color.withOpacity(0.1), child: Icon(icon, color: color, size: 24)),
         SizedBox(height: 8),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF2D3748),
-          ),
-        ),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Color(0xFF718096),
-          ),
-          textAlign: TextAlign.center,
-        ),
+        _isLoading
+          ? SizedBox(height: 28, child: Center(child: SizedBox(width:14, height:14, child: CircularProgressIndicator(strokeWidth:2))))
+          : Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
+        Text(label, style: TextStyle(fontSize: 12, color: Color(0xFF718096)), textAlign: TextAlign.center),
       ],
     );
   }
-
+  
   Widget _buildAchievementsSection() {
+    int earnedCount = _achievements.where((a) => a['earned'] == true).length;
     return Container(
       padding: EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 15,
-            offset: Offset(0, 5),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: Offset(0, 5))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Text(
-                'Achievements',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF2D3748),
-                ),
-              ),
+              Text('Achievements', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
               Spacer(),
-              Text(
-                '3/4 earned',
-                style: TextStyle(
-                  color: Color(0xFF718096),
-                  fontSize: 14,
-                ),
-              ),
+              Text('$earnedCount/${_achievements.length} earned', style: TextStyle(color: Color(0xFF718096), fontSize: 14)),
             ],
           ),
           SizedBox(height: 20),
@@ -273,14 +178,13 @@ class ProfileScreen extends StatelessWidget {
             shrinkWrap: true,
             physics: NeverScrollableScrollPhysics(),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
+              crossAxisCount: 4, 
               crossAxisSpacing: 16,
               mainAxisSpacing: 16,
-              childAspectRatio: 1.2,
             ),
-            itemCount: achievements.length,
+            itemCount: _achievements.length,
             itemBuilder: (context, index) {
-              final achievement = achievements[index];
+              final achievement = _achievements[index];
               return _buildAchievementCard(achievement);
             },
           ),
@@ -290,282 +194,92 @@ class ProfileScreen extends StatelessWidget {
   }
 
   Widget _buildAchievementCard(Map<String, dynamic> achievement) {
-    final isEarned = achievement['earned'] as bool;
-    
-    return Container(
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: isEarned ? achievement['color'].withOpacity(0.1) : Color(0xFFF7FAFC),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isEarned ? achievement['color'].withOpacity(0.3) : Color(0xFFE2E8F0),
+    final bool isEarned = achievement['earned'];
+    return Tooltip(
+      message: "${achievement['title']}\n${achievement['description']}",
+      child: Opacity(
+        opacity: isEarned ? 1.0 : 0.4,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircleAvatar(
+              radius: 25,
+              backgroundColor: isEarned ? (achievement['color'] as Color).withOpacity(0.15) : Color(0xFFE2E8F0),
+              child: Icon(achievement['icon'], color: isEarned ? achievement['color'] : Color(0xFF718096)),
+            ),
+          ],
         ),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: isEarned ? achievement['color'] : Color(0xFFE2E8F0),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Icon(
-              achievement['icon'],
-              color: isEarned ? Colors.white : Color(0xFF718096),
-              size: 20,
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            achievement['title'],
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: isEarned ? Color(0xFF2D3748) : Color(0xFF718096),
-            ),
-            textAlign: TextAlign.center,
-          ),
-          SizedBox(height: 4),
-          Text(
-            achievement['description'],
-            style: TextStyle(
-              fontSize: 10,
-              color: Color(0xFF718096),
-            ),
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
       ),
     );
   }
 
-  Widget _buildRecentActivities() {
+  Widget _buildOptions(BuildContext context) {
     return Container(
-      padding: EdgeInsets.all(24),
-      decoration: BoxDecoration(
+       padding: EdgeInsets.symmetric(vertical: 12),
+       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 15,
-            offset: Offset(0, 5),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: Offset(0, 5))],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Recent Activities',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF2D3748),
-            ),
-          ),
-          SizedBox(height: 20),
-          _buildActivityItem(
-            'Beach Cleanup Drive',
-            'Completed • Dec 10, 2024',
-            Icons.eco,
-            Color(0xFF10B981),
-            '+50 points',
-          ),
-          _buildActivityItem(
-            'Food Bank Volunteer',
-            'Completed • Dec 5, 2024',
-            Icons.people,
-            Color(0xFF6C63FF),
-            '+40 points',
-          ),
-          _buildActivityItem(
-            'Reading Program for Kids',
-            'Registered • Dec 20, 2024',
-            Icons.school,
-            Color(0xFFED8936),
-            'Upcoming',
-          ),
+          _buildProfileOption(context, 'Edit Profile', Icons.edit_outlined),
+          _buildProfileOption(context, 'Register as Organization', Icons.business),
+          _buildProfileOption(context, 'Logout', Icons.logout, isLogout: true),
         ],
       ),
     );
   }
-
-  Widget _buildActivityItem(String title, String subtitle, IconData icon, Color color, String points) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: 16),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Icon(icon, color: color, size: 20),
-          ),
-          SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF2D3748),
-                  ),
-                ),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF718096),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: points.contains('points') ? Color(0xFFFFD700).withOpacity(0.1) : color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              points,
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: points.contains('points') ? Color(0xFFFFD700) : color,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Dalam method _buildProfileOption, update untuk menambahkan navigasi:
-Widget _buildProfileOption(BuildContext context, String title, IconData icon, {bool isLogout = false}) {
-  return Container(
-    margin: EdgeInsets.only(bottom: 12),
-    child: ListTile(
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: isLogout ? Colors.red.withOpacity(0.1) : Color(0xFF6C63FF).withOpacity(0.1),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Icon(
-          icon,
-          color: isLogout ? Colors.red : Color(0xFF6C63FF),
-          size: 20,
-        ),
-      ),
-      title: Text(
-        title,
-        style: TextStyle(
-          fontWeight: FontWeight.w500,
-          color: isLogout ? Colors.red : Color(0xFF2D3748),
-        ),
-      ),
-      trailing: Icon(
-        Icons.arrow_forward_ios,
-        size: 16,
-        color: Color(0xFF718096),
-      ),
+  
+  Widget _buildProfileOption(BuildContext context, String title, IconData icon, {bool isLogout = false}) {
+    return ListTile(
+      leading: Icon(icon, color: isLogout ? Colors.red : Color(0xFF4A5568)),
+      title: Text(title, style: TextStyle(fontWeight: FontWeight.w500, color: isLogout ? Colors.red : Color(0xFF2D3748))),
+      trailing: Icon(Icons.arrow_forward_ios, size: 16, color: Color(0xFF718096)),
       onTap: () {
         if (isLogout) {
-          Navigator.pushReplacementNamed(context, '/welcome');
-        } else {
-          switch (title) {
-            case 'My Events':
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => VolunteerHoursScreen()),
-              );
-              break;
-            case 'Achievements':
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => GamificationScreen()),
-              );
-              break;
-            case 'Social Sharing':
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => SocialSharingScreen()),
-              );
-              break;
-            case 'Organization Portal':
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => OrganizationRegisterScreen()),
-              );
-              break;
-            default:
-              // Handle other options
-              break;
-          }
+          _pbService.logout(); // Panggil service yang sudah diperbaiki
+          Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+        } else if (title == 'Register as Organization') {
+           Navigator.push(context, MaterialPageRoute(builder: (context) => LoginPage()));
         }
       },
-    ),
-  );
-}
+    );
+  }
 
-// Update _buildProfileContent() untuk menambahkan opsi baru:
-Widget _buildProfileContent(BuildContext context) {
-  return Padding(
-    padding: EdgeInsets.all(24.0),
-    child: Column(
-      children: [
-        Text(
-          'Profile',
-          style: Theme.of(context).textTheme.headlineMedium,
-        ),
-        SizedBox(height: 24),
-        Container(
-          width: 100,
-          height: 100,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF6C63FF), Color(0xFF9F7AEA)],
-            ),
-            borderRadius: BorderRadius.circular(50),
-          ),
-          child: Icon(
-            Icons.person,
-            color: Colors.white,
-            size: 48,
-          ),
-        ),
-        SizedBox(height: 16),
-        Text(
-          'Alex Johnson',
-          style: Theme.of(context).textTheme.headlineMedium,
-        ),
-        Text(
-          'alex.johnson@email.com',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-        SizedBox(height: 32),
-        _buildProfileOption(context, 'My Events', Icons.event),
-        _buildProfileOption(context, 'Achievements', Icons.emoji_events),
-        _buildProfileOption(context, 'Social Sharing', Icons.share),
-        _buildProfileOption(context, 'Organization Portal', Icons.business),
-        _buildProfileOption(context, 'Settings', Icons.settings),
-        _buildProfileOption(context, 'Help & Support', Icons.help),
-        _buildProfileOption(context, 'Logout', Icons.logout, isLogout: true),
-      ],
-    ),
-  );
-}
+  Widget _buildBottomNavigationBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white, 
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: Offset(0, -5))]
+      ),
+      child: BottomNavigationBar(
+        currentIndex: 4, // Index 'Profile' selalu aktif di halaman ini
+        onTap: (index) {
+          if (index == 4) return;
+          if (index == 0) {
+            Navigator.popUntil(context, (route) => route.isFirst);
+          } else {
+             switch (index) {
+               case 1: Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => SearchScreen())); break;
+               case 2: Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => GamificationScreen())); break;
+               case 3: Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => VolunteerHoursScreen())); break;
+             }
+          }
+        },
+        type: BottomNavigationBarType.fixed,
+        backgroundColor: Colors.transparent,
+        selectedItemColor: Color(0xFF6C63FF),
+        unselectedItemColor: Color(0xFF718096),
+        elevation: 0,
+        items: [
+          BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
+          BottomNavigationBarItem(icon: Icon(Icons.emoji_events_outlined), label: 'Rewards'),
+          BottomNavigationBarItem(icon: Icon(Icons.access_time), label: 'Hours'),
+          BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'),
+        ],
+      ),
+    );
+  }
 }
