@@ -1,7 +1,9 @@
 // File: lib/services/pocketbase_service.dart
 
+import 'dart:io'; 
 import 'package:pocketbase/pocketbase.dart';
 import 'package:volunteervibe/pocketbase_client.dart';
+import 'package:http/http.dart' show MultipartFile;
 
 class PocketBaseService {
   
@@ -24,7 +26,7 @@ class PocketBaseService {
     }
     // Jika dari koleksi 'users', coba cari relasinya (logika lama, bisa disesuaikan)
     if (user != null && user.collectionName == 'users' && user.getStringValue('organization_id').isNotEmpty) {
-       try {
+        try {
         final userWithOrg = await pb.collection('users').getOne(user.id, expand: 'organization_id');
         return userWithOrg.expand['organization_id']?.first;
       } catch (e) {
@@ -128,6 +130,34 @@ class PocketBaseService {
     } catch (e) {
       print('Error fetching joined events count: $e');
       return 0;
+    }
+  }
+
+  // New method to update user profile
+  Future<void> updateUserProfile({String? name, File? avatarFile}) async {
+    final currentUser = pb.authStore.model;
+    if (currentUser == null) {
+      throw Exception("No authenticated user found.");
+    }
+
+    final body = <String, dynamic>{};
+    if (name != null) {
+      body['name'] = name;
+    }
+
+    List<MultipartFile> files = [];
+    if (avatarFile != null) {
+      files.add(await MultipartFile.fromPath('avatar', avatarFile.path));
+    }
+
+    try {
+      // Use the correct collection name for users, which is typically 'users'
+      await pb.collection('users').update(currentUser.id, body: body, files: files);
+      // Refresh the auth store model after update to get the latest data
+      await pb.collection('users').authRefresh();
+    } catch (e) {
+      // Re-throw the error to be caught by the calling screen
+      throw Exception("Failed to update profile: $e");
     }
   }
 }

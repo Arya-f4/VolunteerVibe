@@ -1,12 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 
+// --- Impor untuk Navigasi ---
+import 'package:volunteervibe/screens/search_screen.dart';
+import 'package:volunteervibe/screens/gamification_screen.dart';
+import 'package:volunteervibe/screens/profile_screen.dart';
+
 class VolunteerHoursScreen extends StatefulWidget {
   @override
   _VolunteerHoursScreenState createState() => _VolunteerHoursScreenState();
 }
 
 class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
+  // --- State untuk Bottom Bar ---
+  int _bottomNavIndex = 3; // 3 adalah index untuk "Hours"
+
   final List<Map<String, dynamic>> _volunteerLogs = [
     {
       'title': 'Beach Cleanup Drive',
@@ -80,6 +88,7 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Color(0xFFF7FAFC), // Warna latar belakang yang lebih soft
       appBar: AppBar(
         title: Text(
           'Volunteer Hours',
@@ -89,19 +98,22 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
           ),
         ),
         backgroundColor: Colors.white,
-        elevation: 0,
+        elevation: 1, // Memberi sedikit bayangan untuk memisahkan dari konten
+        automaticallyImplyLeading: false, // Sembunyikan tombol kembali default
         leading: IconButton(
           icon: Icon(Icons.arrow_back_ios, color: Color(0xFF2D3748)),
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
           IconButton(
-            icon: Icon(Icons.add, color: Color(0xFF6C63FF)),
+            icon: Icon(Icons.add_circle_outline, color: Color(0xFF6C63FF)),
             onPressed: _showAddHoursDialog,
+            tooltip: 'Log New Hours',
           ),
           IconButton(
-            icon: Icon(Icons.file_download, color: Color(0xFF6C63FF)),
+            icon: Icon(Icons.download_outlined, color: Color(0xFF6C63FF)),
             onPressed: _exportHours,
+            tooltip: 'Export Hours',
           ),
         ],
       ),
@@ -116,16 +128,114 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
           ],
         ),
       ),
+      // --- BOTTOM NAVIGATION BAR DITAMBAHKAN DI SINI ---
+      bottomNavigationBar: _buildBottomNavigationBar(),
     );
   }
 
+  // --- START: KODE BOTTOM BAR ---
+
+  Widget _buildBottomNavigationBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 20,
+            offset: Offset(0, -5),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildCompactNavItem(Icons.home_rounded, 'Home', 0),
+              _buildCompactNavItem(Icons.search_rounded, 'Search', 1),
+              _buildCompactNavItem(Icons.emoji_events_rounded, 'Rewards', 2),
+              _buildCompactNavItem(Icons.schedule_rounded, 'Hours', 3),
+              _buildCompactNavItem(Icons.person_rounded, 'Profile', 4),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactNavItem(IconData icon, String label, int index) {
+    final activeColor = Color(0xFF6C63FF);
+    final inactiveColor = Color(0xFF718096);
+    final bool isActive = _bottomNavIndex == index;
+
+    return Flexible(
+      child: GestureDetector(
+        onTap: () {
+          if (index == _bottomNavIndex) return;
+
+          switch (index) {
+            case 0:
+              Navigator.popUntil(context, (route) => route.isFirst);
+              break;
+            case 1:
+              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => SearchScreen()));
+              break;
+            case 2:
+              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => GamificationScreen()));
+              break;
+            case 3:
+              // Sudah di halaman ini
+              break;
+            case 4:
+              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => ProfileScreen()));
+              break;
+          }
+        },
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: isActive ? activeColor.withOpacity(0.1) : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                color: isActive ? activeColor : inactiveColor,
+                size: 24,
+              ),
+              SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isActive ? activeColor : inactiveColor,
+                  fontSize: 11,
+                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // --- END: KODE BOTTOM BAR ---
+  
   Widget _buildHoursSummary() {
     return Container(
-      margin: EdgeInsets.all(24),
+      margin: EdgeInsets.fromLTRB(24, 24, 24, 16),
       padding: EdgeInsets.all(24),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [Color(0xFF6C63FF), Color(0xFF9F7AEA)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
@@ -140,7 +250,7 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
         children: [
           Row(
             children: [
-              Icon(Icons.access_time, color: Colors.white, size: 32),
+              Icon(Icons.access_time_filled_rounded, color: Colors.white, size: 32),
               SizedBox(width: 16),
               Expanded(
                 child: Column(
@@ -188,7 +298,7 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
                 child: _buildSummaryItem(
                   'Verified',
                   '${_verifiedHours.toStringAsFixed(1)}h',
-                  Icons.verified,
+                  Icons.verified_user_rounded,
                   Color(0xFF10B981),
                 ),
               ),
@@ -197,7 +307,7 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
                 child: _buildSummaryItem(
                   'Pending',
                   '${_pendingHours.toStringAsFixed(1)}h',
-                  Icons.pending,
+                  Icons.pending_actions_rounded,
                   Color(0xFFED8936),
                 ),
               ),
@@ -206,7 +316,7 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
                 child: _buildSummaryItem(
                   'Events',
                   '${_volunteerLogs.length}',
-                  Icons.event,
+                  Icons.event_note_rounded,
                   Color(0xFFE53E3E),
                 ),
               ),
@@ -219,9 +329,9 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
 
   Widget _buildSummaryItem(String label, String value, IconData icon, Color color) {
     return Container(
-      padding: EdgeInsets.all(16),
+      padding: EdgeInsets.symmetric(vertical: 16, horizontal: 8),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.1),
+        color: Colors.white.withOpacity(0.15),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -250,8 +360,8 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
 
   Widget _buildPeriodSelector() {
     return Container(
-      height: 50,
-      margin: EdgeInsets.symmetric(horizontal: 24),
+      height: 40,
+      margin: EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         itemCount: _periods.length,
@@ -261,36 +371,18 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
           
           return Padding(
             padding: EdgeInsets.only(right: 12),
-            child: GestureDetector(
-              onTap: () => setState(() => _selectedPeriod = period),
-              child: Container(
-                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                decoration: BoxDecoration(
-                  color: isSelected ? Color(0xFF6C63FF) : Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isSelected ? Color(0xFF6C63FF) : Color(0xFFE2E8F0),
-                  ),
-                  boxShadow: isSelected ? [
-                    BoxShadow(
-                      color: Color(0xFF6C63FF).withOpacity(0.3),
-                      blurRadius: 8,
-                      offset: Offset(0, 2),
-                    ),
-                  ] : null,
-                ),
-                child: Center(
-                  child: Text(
-                    period,
-                    style: TextStyle(
-                      color: isSelected ? Colors.white : Color(0xFF4A5568),
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
+            child: ActionChip(
+              label: Text(period),
+              labelStyle: TextStyle(
+                  color: isSelected ? Colors.white : Color(0xFF4A5568),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
               ),
-            ),
+              backgroundColor: isSelected ? Color(0xFF6C63FF) : Colors.white,
+              onPressed: () => setState(() => _selectedPeriod = period),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              side: BorderSide(color: isSelected ? Color(0xFF6C63FF) : Color(0xFFE2E8F0)),
+            )
           );
         },
       ),
@@ -299,7 +391,7 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
 
   Widget _buildHoursLog() {
     return Container(
-      margin: EdgeInsets.all(24),
+      padding: EdgeInsets.fromLTRB(24, 16, 24, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -314,20 +406,24 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
                 ),
               ),
               Spacer(),
-              GestureDetector(
+              InkWell(
                 onTap: _showFilterDialog,
-                child: Row(
-                  children: [
-                    Icon(Icons.filter_list, color: Color(0xFF6C63FF), size: 20),
-                    SizedBox(width: 4),
-                    Text(
-                      'Filter',
-                      style: TextStyle(
-                        color: Color(0xFF6C63FF),
-                        fontWeight: FontWeight.w600,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.all(4.0),
+                  child: Row(
+                    children: [
+                      Icon(Icons.filter_list_rounded, color: Color(0xFF6C63FF), size: 20),
+                      SizedBox(width: 4),
+                      Text(
+                        'Filter',
+                        style: TextStyle(
+                          color: Color(0xFF6C63FF),
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -335,6 +431,7 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
           SizedBox(height: 16),
           Expanded(
             child: ListView.builder(
+              padding: EdgeInsets.zero,
               itemCount: _volunteerLogs.length,
               itemBuilder: (context, index) {
                 return _buildLogCard(_volunteerLogs[index]);
@@ -411,7 +508,7 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
                     Container(
                       padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: log['status'] == 'Verified' 
+                        color: log['status'] == 'Verified'
                             ? Color(0xFF10B981).withOpacity(0.1)
                             : Color(0xFFED8936).withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
@@ -421,7 +518,7 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: log['status'] == 'Verified' 
+                          color: log['status'] == 'Verified'
                               ? Color(0xFF10B981)
                               : Color(0xFFED8936),
                         ),
@@ -429,42 +526,34 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
                     ),
                   ],
                 ),
-                SizedBox(height: 16),
+                Divider(height: 32, color: Colors.grey.shade200),
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Icon(Icons.calendar_today, size: 16, color: Color(0xFF718096)),
-                    SizedBox(width: 8),
-                    Text(
-                      log['date'],
-                      style: TextStyle(color: Color(0xFF718096), fontSize: 14),
+                    Row(
+                      children: [
+                        Icon(Icons.calendar_today, size: 16, color: Color(0xFF718096)),
+                        SizedBox(width: 8),
+                        Text(
+                          log['date'],
+                          style: TextStyle(color: Color(0xFF718096), fontSize: 14),
+                        ),
+                      ],
                     ),
-                    SizedBox(width: 16),
-                    Icon(Icons.access_time, size: 16, color: Color(0xFF718096)),
-                    SizedBox(width: 8),
-                    Text(
-                      '${log['startTime']} - ${log['endTime']}',
-                      style: TextStyle(color: Color(0xFF718096), fontSize: 14),
+                    Row(
+                      children: [
+                        Icon(Icons.timer_outlined, size: 16, color: Color(0xFF6C63FF)),
+                        SizedBox(width: 8),
+                        Text(
+                          '${log['hours']} hours',
+                          style: TextStyle(
+                            color: Color(0xFF6C63FF),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                SizedBox(height: 8),
-                Row(
-                  children: [
-                    Icon(Icons.timer, size: 16, color: Color(0xFF6C63FF)),
-                    SizedBox(width: 8),
-                    Text(
-                      '${log['hours']} hours',
-                      style: TextStyle(
-                        color: Color(0xFF6C63FF),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Spacer(),
-                    if (log['status'] == 'Verified')
-                      Icon(Icons.verified, color: Color(0xFF10B981), size: 16)
-                    else
-                      Icon(Icons.pending, color: Color(0xFFED8936), size: 16),
                   ],
                 ),
               ],
@@ -481,15 +570,16 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.7,
+        margin: EdgeInsets.all(8),
+        height: MediaQuery.of(context).size.height * 0.75,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         child: Column(
           children: [
-            Container(
-              padding: EdgeInsets.all(20),
+            Padding(
+              padding: const EdgeInsets.all(20),
               child: Row(
                 children: [
                   Text(
@@ -527,9 +617,16 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
                     if (log['status'] == 'Pending')
                       SizedBox(
                         width: double.infinity,
-                        child: ElevatedButton(
+                        child: ElevatedButton.icon(
+                          icon: Icon(Icons.send_rounded, size: 18),
+                          label: Text('Request Verification'),
                           onPressed: () => _requestVerification(log),
-                          child: Text('Request Verification'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Color(0xFF6C63FF),
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                          ),
                         ),
                       ),
                   ],
@@ -569,7 +666,7 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
     );
   }
 
-  void _showAddHoursDialog() {
+ void _showAddHoursDialog() {
     final _titleController = TextEditingController();
     final _organizationController = TextEditingController();
     final _supervisorController = TextEditingController();
@@ -793,17 +890,17 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
   IconData _getCategoryIcon(String category) {
     switch (category) {
       case 'Environment':
-        return Icons.eco;
+        return Icons.eco_rounded;
       case 'Education':
-        return Icons.school;
+        return Icons.school_rounded;
       case 'Health':
-        return Icons.health_and_safety;
+        return Icons.health_and_safety_rounded;
       case 'Community':
-        return Icons.people;
+        return Icons.people_rounded;
       case 'Animals':
-        return Icons.pets;
+        return Icons.pets_rounded;
       default:
-        return Icons.volunteer_activism;
+        return Icons.volunteer_activism_rounded;
     }
   }
 }

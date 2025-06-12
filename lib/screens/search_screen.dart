@@ -9,12 +9,13 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:flutter_map_location_marker/flutter_map_location_marker.dart';
+import 'package:volunteervibe/screens/profile_screen.dart';
 
 // Import untuk halaman lain di bottom bar
 import 'event_detail_screen.dart';
 import 'gamification_screen.dart';
 import 'volunteer_hours_screen.dart';
-// import 'profile_screen.dart'; // Asumsi ada profile screen
+// import 'profile_screen.dart'; // Pastikan Anda memiliki ProfileScreen
 
 class SearchScreen extends StatefulWidget {
   @override
@@ -58,7 +59,7 @@ class _SearchScreenState extends State<SearchScreen> {
   void dispose() {
     _searchController.dispose();
     _debounce?.cancel();
-    _mapController.dispose();
+    // _mapController tidak punya dispose() di versi terbaru, jika ada, gunakan
     super.dispose();
   }
 
@@ -70,6 +71,12 @@ class _SearchScreenState extends State<SearchScreen> {
       await _fetchEvents(); 
     } catch (e) {
       print("An error occurred during initialization: $e");
+      // Menampilkan pesan error kepada pengguna jika perlu
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to load initial data. Please try again."))
+        );
+      }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -109,7 +116,7 @@ class _SearchScreenState extends State<SearchScreen> {
         title: Text('Search Opportunities', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
         backgroundColor: Colors.white,
         elevation: 1,
-        automaticallyImplyLeading: false, // Hapus tombol kembali default
+        automaticallyImplyLeading: false,
         leading: IconButton(
           icon: Icon(Icons.arrow_back_ios, color: Color(0xFF2D3748)),
           onPressed: () => Navigator.pop(context),
@@ -128,23 +135,52 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
+  // --- START: KODE BOTTOM BAR YANG DIPERBARUI ---
+
   Widget _buildBottomNavigationBar() {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white, 
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: Offset(0, -5))]
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 20,
+            offset: Offset(0, -5),
+          ),
+        ],
       ),
-      child: BottomNavigationBar(
-        currentIndex: _bottomNavIndex,
-        onTap: (index) {
-          if (index == _bottomNavIndex) return;
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildCompactNavItem(Icons.home_rounded, 'Home', 0),
+              _buildCompactNavItem(Icons.search_rounded, 'Search', 1),
+              _buildCompactNavItem(Icons.emoji_events_rounded, 'Rewards', 2),
+              _buildCompactNavItem(Icons.schedule_rounded, 'Hours', 3),
+              _buildCompactNavItem(Icons.person_rounded, 'Profile', 4),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
-          setState(() {
-            _bottomNavIndex = index;
-          });
+  Widget _buildCompactNavItem(IconData icon, String label, int index) {
+    // Menggunakan warna utama dari halaman ini agar konsisten
+    final activeColor = Color(0xFF6C63FF); 
+    final inactiveColor = Color(0xFF718096);
+    final bool isActive = _bottomNavIndex == index;
+
+    return Flexible(
+      child: GestureDetector(
+        onTap: () {
+          if (index == _bottomNavIndex) return; // Jangan lakukan apa-apa jika tab yang sama ditekan
 
           switch (index) {
             case 0:
+              // Kembali ke HomeScreen
               Navigator.pop(context);
               break;
             case 1:
@@ -157,26 +193,45 @@ class _SearchScreenState extends State<SearchScreen> {
               Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => VolunteerHoursScreen()));
               break;
             case 4:
-              // Ganti dengan halaman Profile Anda jika ada
-              // Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => ProfileScreen()));
+              // Ganti dengan halaman Profile Anda
+              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => ProfileScreen()));
               break;
           }
         },
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.white,
-        selectedItemColor: Color(0xFF6C63FF),
-        unselectedItemColor: Color(0xFF718096),
-        elevation: 0,
-        items: [
-          BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
-          BottomNavigationBarItem(icon: Icon(Icons.emoji_events_outlined), label: 'Rewards'),
-          BottomNavigationBarItem(icon: Icon(Icons.access_time), label: 'Hours'),
-          BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'),
-        ],
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: isActive ? activeColor.withOpacity(0.1) : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                color: isActive ? activeColor : inactiveColor,
+                size: 24,
+              ),
+              SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isActive ? activeColor : inactiveColor,
+                  fontSize: 11,
+                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
+
+  // --- END: KODE BOTTOM BAR YANG DIPERBARUI ---
+
 
   List<Marker> _buildMarkers(List<RecordModel> events) {
     return events.map((event) {
@@ -194,16 +249,14 @@ class _SearchScreenState extends State<SearchScreen> {
           onTap: () => _showEventPreview(event, point!),
           child: Tooltip(
             message: event.getStringValue('title'),
-            child: Icon(Icons.location_pin, color: Colors.red, size: 40),
+            child: Icon(Icons.location_pin, color: Color(0xFFEF4444), size: 40),
           ),
         ),
       );
     }).whereType<Marker>().toList();
   }
 
-  // --- TAMPILAN POP-UP BARU YANG MENYERUPAI LIST EVENT ---
   void _showEventPreview(RecordModel event, LatLng destination) {
-    // Ambil semua data yang diperlukan di awal
     final organization = event.expand['organization_id']?.first;
     final category = event.expand['categories_id']?.first;
     final String title = event.getStringValue('title', 'No Title');
@@ -222,14 +275,14 @@ class _SearchScreenState extends State<SearchScreen> {
       builder: (modalContext) => StatefulBuilder(
         builder: (BuildContext context, StateSetter modalState) {
           return Container(
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+            margin: EdgeInsets.all(8),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
             child: Padding(
               padding: const EdgeInsets.all(24.0),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // --- Bagian Atas: Avatar & Detail Utama ---
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -273,8 +326,6 @@ class _SearchScreenState extends State<SearchScreen> {
                     ],
                   ),
                   SizedBox(height: 16),
-                  
-                  // --- Deskripsi Event ---
                   Text(
                     description,
                     maxLines: 4,
@@ -282,8 +333,6 @@ class _SearchScreenState extends State<SearchScreen> {
                     style: TextStyle(color: Color(0xFF4A5568), fontSize: 14, height: 1.5),
                   ),
                   Divider(height: 32, color: Colors.grey.shade200),
-                  
-                  // --- Info Poin & Peserta ---
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
@@ -292,15 +341,13 @@ class _SearchScreenState extends State<SearchScreen> {
                     ],
                   ),
                   SizedBox(height: 24),
-                  
-                  // --- Tombol Aksi ---
                   Row(
                     children: [
                       Expanded(
                         child: OutlinedButton.icon(
                           icon: _isRouteLoading
-                              ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                              : Icon(_routePoints.isEmpty ? Icons.directions : Icons.clear),
+                              ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF6C63FF)))
+                              : Icon(_routePoints.isEmpty ? Icons.directions : Icons.clear_rounded),
                           label: Text(_routePoints.isEmpty ? "Show Route" : "Hide Route"),
                           onPressed: _isRouteLoading ? null : () async {
                             final navigator = Navigator.of(modalContext);
@@ -323,6 +370,7 @@ class _SearchScreenState extends State<SearchScreen> {
                             foregroundColor: Color(0xFF6C63FF),
                             side: BorderSide(color: Color(0xFF6C63FF)),
                             padding: EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
                           ),
                         ),
                       ),
@@ -338,6 +386,7 @@ class _SearchScreenState extends State<SearchScreen> {
                             backgroundColor: Color(0xFF6C63FF),
                             foregroundColor: Colors.white,
                             padding: EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
                           ),
                         ),
                       ),
@@ -435,10 +484,10 @@ class _SearchScreenState extends State<SearchScreen> {
                 Text('${_events.length} opportunities found', style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF2D3748))),
                 Spacer(),
                 ActionChip(
-                  avatar: Icon(_isMapView ? Icons.list : Icons.map_outlined, color: _isMapView ? Colors.white : Color(0xFF6C63FF), size: 16),
+                  avatar: Icon(_isMapView ? Icons.list : Icons.map_outlined, color: _isMapView ? Color(0xFF6C63FF) : Colors.white, size: 16),
                   label: Text(_isMapView ? 'List' : 'Map'),
-                  labelStyle: TextStyle(color: _isMapView ? Colors.white : Color(0xFF6C63FF), fontWeight: FontWeight.w600),
-                  backgroundColor: _isMapView ? Color(0xFF6C63FF) : Colors.white,
+                  labelStyle: TextStyle(color: _isMapView ? Color(0xFF6C63FF) : Colors.white, fontWeight: FontWeight.w600),
+                  backgroundColor: _isMapView ? Colors.white : Color(0xFF6C63FF),
                   side: BorderSide(color: Color(0xFF6C63FF).withOpacity(0.5)),
                   onPressed: () => setState(() => _isMapView = !_isMapView),
                 ),
@@ -447,7 +496,7 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
           Expanded(
             child: _isLoading
-                ? Center(child: CircularProgressIndicator())
+                ? Center(child: CircularProgressIndicator(color: Color(0xFF6C63FF)))
                 : _isMapView ? _buildMapView() : _buildListView(),
           ),
         ],
@@ -456,7 +505,7 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildMapView() {
-    if (_currentPosition == null) return Center(child: CircularProgressIndicator());
+    if (_currentPosition == null) return Center(child: Text("Getting your location...", style: TextStyle(color: Colors.grey.shade600)));
     return Stack(
       children: [
         FlutterMap(
@@ -466,7 +515,7 @@ class _SearchScreenState extends State<SearchScreen> {
             TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
             if (_routePoints.isNotEmpty)
               PolylineLayer(
-                polylines: [Polyline(points: _routePoints, color: Colors.blue, strokeWidth: 5)],
+                polylines: [Polyline(points: _routePoints, color: Colors.blue.shade400, strokeWidth: 5)],
               ),
             CurrentLocationLayer(),
             MarkerClusterLayerWidget(
@@ -604,16 +653,40 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
   
-  Widget _buildEmptyState() => Center(child: Text("No opportunities found.", style: TextStyle(color: Colors.grey[600])));
+  Widget _buildEmptyState() => Center(
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.search_off_rounded, size: 60, color: Colors.grey.shade400),
+        SizedBox(height: 16),
+        Text("No opportunities found", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Color(0xFF4A5568))),
+        SizedBox(height: 8),
+        Text(
+          "Try adjusting your search or filters.",
+          style: TextStyle(color: Colors.grey.shade600),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    ),
+  );
   
   Widget _buildDateSelector() {
     return Material(
-      color: Color(0xFFF7FAFC), borderRadius: BorderRadius.circular(12),
+      color: Colors.transparent, // Transparan agar efek InkWell terlihat
       child: InkWell(
         onTap: () async {
           final picked = await showDatePicker(
             context: context, initialDate: _selectedDate ?? DateTime.now(),
             firstDate: DateTime(2020), lastDate: DateTime(2030),
+            builder: (context, child) {
+              return Theme(
+                data: ThemeData.light().copyWith(
+                  colorScheme: ColorScheme.light(primary: Color(0xFF6C63FF)),
+                  buttonTheme: ButtonThemeData(textTheme: ButtonTextTheme.primary),
+                ),
+                child: child!,
+              );
+            },
           );
           if (picked != null && picked != _selectedDate) {
             setState(() => _selectedDate = picked);
@@ -622,8 +695,12 @@ class _SearchScreenState extends State<SearchScreen> {
         },
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: Color(0xFFE2E8F0))),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12), 
+            border: Border.all(color: Color(0xFFE2E8F0)),
+            color: Color(0xFFF7FAFC)
+          ),
           child: Row(
             children: [
               Icon(Icons.calendar_today, color: Color(0xFF6C63FF), size: 20),
@@ -646,13 +723,17 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _buildLocationSelector() {
     return Material(
-      color: Color(0xFFF7FAFC), borderRadius: BorderRadius.circular(12),
+      color: Colors.transparent,
       child: InkWell(
         onTap: _centerOnCurrentLocation,
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: Color(0xFFE2E8F0))),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Color(0xFFE2E8F0)),
+            color: Color(0xFFF7FAFC)
+          ),
           child: Row(
             children: [
               Icon(Icons.my_location, color: Color(0xFF6C63FF), size: 20),

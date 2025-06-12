@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:volunteervibe/screens/search_screen.dart';
+import 'package:volunteervibe/screens/volunteer_hours_screen.dart';
+import 'package:volunteervibe/screens/profile_screen.dart';
 
 // Enum untuk melacak view yang sedang aktif, lebih rapi daripada integer.
 enum GamificationView { badges, rewards }
@@ -23,6 +26,9 @@ class _GamificationScreenState extends State<GamificationScreen>
   
   // State baru untuk menggantikan TabController, default-nya menampilkan Badges
   GamificationView _selectedView = GamificationView.badges;
+  
+  // --- State untuk Bottom Bar ---
+  int _bottomNavIndex = 2; // 2 adalah index untuk "Rewards"
 
   // --- Data Dummy ---
   final List<Map<String, dynamic>> _badges = [
@@ -156,6 +162,7 @@ class _GamificationScreenState extends State<GamificationScreen>
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
+        // Tombol kembali ini penting jika halaman ini dibuka dari halaman lain
         leading: IconButton(
           icon: Icon(Icons.arrow_back_ios, color: Color(0xFF2D3748)),
           onPressed: () => Navigator.pop(context),
@@ -169,10 +176,12 @@ class _GamificationScreenState extends State<GamificationScreen>
         ),
         backgroundColor: Colors.white,
         elevation: 0,
+        automaticallyImplyLeading: false, // Kita handle tombol kembali secara manual
       ),
       body: SingleChildScrollView(
         child: Column(
           children: [
+            SizedBox(height: 16), // Memberi sedikit jarak dari app bar
             _buildLevelProgress(),
             SizedBox(height: 24),
             _buildSegmentedControl(),
@@ -182,11 +191,110 @@ class _GamificationScreenState extends State<GamificationScreen>
               _buildBadgesTab()
             else
               _buildRewardsTab(),
+            SizedBox(height: 24), // Memberi ruang di bawah konten
           ],
+        ),
+      ),
+      // --- BOTTOM NAVIGATION BAR DITAMBAHKAN DI SINI ---
+      bottomNavigationBar: _buildBottomNavigationBar(),
+    );
+  }
+  
+  // --- START: KODE BOTTOM BAR YANG BARU DITAMBAHKAN ---
+
+  Widget _buildBottomNavigationBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 20,
+            offset: Offset(0, -5),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildCompactNavItem(Icons.home_rounded, 'Home', 0),
+              _buildCompactNavItem(Icons.search_rounded, 'Search', 1),
+              _buildCompactNavItem(Icons.emoji_events_rounded, 'Rewards', 2),
+              _buildCompactNavItem(Icons.schedule_rounded, 'Hours', 3),
+              _buildCompactNavItem(Icons.person_rounded, 'Profile', 4),
+            ],
+          ),
         ),
       ),
     );
   }
+
+  Widget _buildCompactNavItem(IconData icon, String label, int index) {
+    final activeColor = Color(0xFF6C63FF); 
+    final inactiveColor = Color(0xFF718096);
+    final bool isActive = _bottomNavIndex == index;
+
+    return Flexible(
+      child: GestureDetector(
+        onTap: () {
+          if (index == _bottomNavIndex) return; // Jangan lakukan apa-apa jika tab yang sama ditekan
+
+          switch (index) {
+            case 0:
+              // Kembali ke halaman paling awal (HomeScreen)
+              Navigator.popUntil(context, (route) => route.isFirst);
+              break;
+            case 1:
+              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => SearchScreen()));
+              break;
+            case 2:
+              // Sudah di halaman ini
+              break;
+            case 3:
+              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => VolunteerHoursScreen()));
+              break;
+            case 4:
+              // Ganti dengan halaman Profile Anda
+              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => ProfileScreen()));
+              break;
+          }
+        },
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: isActive ? activeColor.withOpacity(0.1) : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                color: isActive ? activeColor : inactiveColor,
+                size: 24,
+              ),
+              SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isActive ? activeColor : inactiveColor,
+                  fontSize: 11,
+                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // --- END: KODE BOTTOM BAR YANG BARU DITAMBAHKAN ---
 
   Widget _buildSegmentedControl() {
     return Container(
