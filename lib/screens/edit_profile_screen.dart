@@ -26,18 +26,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   File? _imageFile;
   bool _isUploading = false;
-  String? _newAvatarUrl; // To hold the current avatar URL or the newly selected image's temporary URL
+  String? _newAvatarUrl;
 
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.currentName);
     _newAvatarUrl = widget.currentAvatarUrl;
-
-    // --- DEBUGGING PRINTS ---
-    print('EditProfileScreen: Received currentName: ${widget.currentName}');
-    print('EditProfileScreen: Received currentAvatarUrl: ${widget.currentAvatarUrl}');
-    // --- END DEBUGGING PRINTS ---
   }
 
   @override
@@ -51,8 +46,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (pickedFile != null) {
       setState(() {
         _imageFile = File(pickedFile.path);
-        // We don't update _newAvatarUrl here yet, as it's only truly updated
-        // after a successful save. The _imageFile takes precedence for display.
       });
     }
   }
@@ -74,7 +67,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           backgroundColor: Colors.green,
         ),
       );
-      // Kirim 'true' kembali ke halaman profil untuk menandakan ada pembaruan
       Navigator.pop(context, true); 
 
     } catch (e) {
@@ -123,8 +115,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 style: ElevatedButton.styleFrom(
                   padding: EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  backgroundColor: Color(0xFF6C63FF), // Add a primary color for the button
-                  foregroundColor: Colors.white, // Text color
+                  backgroundColor: Color(0xFF6C63FF),
+                  foregroundColor: Colors.white,
                 ),
                 child: _isUploading
                   ? Text("Saving...")
@@ -140,10 +132,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Widget _buildAvatarEditor() {
     ImageProvider? backgroundImage;
     if (_imageFile != null) {
-      // If a new image is picked, use it
       backgroundImage = FileImage(_imageFile!);
     } else if (_newAvatarUrl != null && _newAvatarUrl!.isNotEmpty) {
-      // Otherwise, if there's a current avatar URL, use it
       backgroundImage = NetworkImage(_newAvatarUrl!);
     }
 
@@ -165,7 +155,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               onTap: _pickImage,
               child: CircleAvatar(
                 radius: 22,
-                backgroundColor: Theme.of(context).primaryColor, // Use theme's primary color
+                backgroundColor: Theme.of(context).primaryColor, 
                 child: Icon(Icons.edit, color: Colors.white, size: 22),
               ),
             ),

@@ -10,11 +10,8 @@ import 'forgot_password.dart';
 import 'package:volunteervibe/screens/home_screen.dart';
 import 'package:volunteervibe/screens/organization_dashboard.dart';
 
-// TAMBAHKAN: Import file pocketbase_client.dart untuk menggunakan instance pb global.
+// Import file pocketbase_client.dart untuk menggunakan instance pb global.
 import 'package:volunteervibe/pocketbase_client.dart';
-
-// HAPUS: Baris ini tidak lagi diperlukan karena kita akan menggunakan instance dari pocketbase_client.dart
-// final pb = PocketBase('http://127.0.0.1:8090');
 
 // Kelas untuk transisi halaman kustom (Slide & Fade)
 class SlideFadePageRoute<T> extends PageRouteBuilder<T> {
@@ -50,10 +47,12 @@ class LoginPage extends StatefulWidget {
   _LoginPageState createState() => _LoginPageState();
 }
 
-class _LoginPageState extends State<LoginPage> {
+class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
 
   bool _showPassword = false;
   bool _isLoading = false;
@@ -64,9 +63,23 @@ class _LoginPageState extends State<LoginPage> {
   UserType _selectedUserType = UserType.user;
 
   @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeIn),
+    );
+    _animationController.forward();
+  }
+
+  @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _animationController.dispose();
     super.dispose();
   }
 
@@ -90,6 +103,9 @@ class _LoginPageState extends State<LoginPage> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Login berhasil! Selamat datang kembali, $recordName!'),
         backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ));
 
       if (_selectedUserType == UserType.user) {
@@ -106,12 +122,18 @@ class _LoginPageState extends State<LoginPage> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(errorMessage),
         backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Terjadi kesalahan: ${e.toString()}'),
         backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ));
     } finally {
       if (mounted) {
@@ -147,6 +169,9 @@ class _LoginPageState extends State<LoginPage> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Login $provider berhasil! Selamat datang kembali, $userName!'),
         backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ));
       Navigator.pushReplacementNamed(context, '/home');
     } catch (e) {
@@ -154,6 +179,9 @@ class _LoginPageState extends State<LoginPage> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Login $provider gagal: ${e.toString()}'),
         backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ));
     } finally {
       if (mounted) {
@@ -170,9 +198,12 @@ class _LoginPageState extends State<LoginPage> {
     await Future.delayed(const Duration(seconds: 1));
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Login dengan Instagram belum diimplementasikan.'),
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Login dengan Instagram belum diimplementasikan.'),
         backgroundColor: Colors.orange,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ));
       setState(() => _isInstagramLoading = false);
     }
@@ -184,11 +215,14 @@ class _LoginPageState extends State<LoginPage> {
       backgroundColor: const Color(0xFFFFFFFF),
       body: SafeArea(
         child: SingleChildScrollView(
-          child: Column(
-            children: [
-              _buildTopSection(),
-              _buildBottomSection(),
-            ],
+          child: FadeTransition(
+            opacity: _fadeAnimation,
+            child: Column(
+              children: [
+                _buildTopSection(),
+                _buildBottomSection(),
+              ],
+            ),
           ),
         ),
       ),
@@ -197,13 +231,17 @@ class _LoginPageState extends State<LoginPage> {
 
   Widget _buildTopSection() {
     return SizedBox(
-      height: MediaQuery.of(context).size.height * 0.5,
+      height: MediaQuery.of(context).size.height * 0.45,
       child: Stack(
         children: [
           Container(
-            height: MediaQuery.of(context).size.height * 0.45,
+            height: MediaQuery.of(context).size.height * 0.4,
             decoration: const BoxDecoration(
-              color: Color(0xFF1B384A),
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFF1B384A), Color(0xFF326789)],
+              ),
               borderRadius: BorderRadius.only(
                 bottomLeft: Radius.circular(50),
                 bottomRight: Radius.circular(50),
@@ -211,6 +249,28 @@ class _LoginPageState extends State<LoginPage> {
             ),
             child: Stack(
               children: [
+                Positioned(
+                  top: MediaQuery.of(context).size.height * 0.05,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Text(
+                      'Welcome Back',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            offset: const Offset(0, 2),
+                            blurRadius: 4,
+                            color: Colors.black.withOpacity(0.25),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
                 Positioned(
                   bottom: 70,
                   left: 50,
@@ -229,23 +289,24 @@ class _LoginPageState extends State<LoginPage> {
             right: 0,
             child: Center(
               child: Container(
-                width: 100,
-                height: 100,
+                width: 110,
+                height: 110,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 10,
+                      color: Colors.black.withOpacity(0.15),
+                      blurRadius: 15,
                       offset: const Offset(0, 5),
+                      spreadRadius: 2,
                     ),
                   ],
                 ),
                 child: Center(
                   child: Hero(
                     tag: 'appLogoHero',
-                    child: _buildLogo(scale: 0.8),
+                    child: _buildLogo(scale: 0.9),
                   ),
                 ),
               ),
@@ -309,15 +370,16 @@ class _LoginPageState extends State<LoginPage> {
       padding: const EdgeInsets.symmetric(horizontal: 24.0),
       child: Column(
         children: [
-          const SizedBox(height: 30),
+          const SizedBox(height: 20),
           const Align(
-            alignment: Alignment.centerLeft,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('HEY!', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF1B384A))),
-                Text('LOGIN NOW', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF1B384A))),
-              ],
+            alignment: Alignment.center,
+            child: Text(
+              'Sign In to Your Account',
+              style: TextStyle(
+                fontSize: 22, 
+                fontWeight: FontWeight.bold, 
+                color: Color(0xFF1B384A),
+              ),
             ),
           ),
           const SizedBox(height: 24),
@@ -346,6 +408,13 @@ class _LoginPageState extends State<LoginPage> {
       decoration: BoxDecoration(
         color: const Color(0xFFE9EEF2),
         borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: ToggleButtons(
         isSelected: [
@@ -381,6 +450,7 @@ class _LoginPageState extends State<LoginPage> {
           _buildTextField(
             controller: _emailController,
             hintText: 'Email',
+            prefixIcon: Icons.email_outlined,
             keyboardType: TextInputType.emailAddress,
             validator: (value) {
               if (value == null || value.isEmpty) return 'Email tidak boleh kosong';
@@ -392,6 +462,7 @@ class _LoginPageState extends State<LoginPage> {
           _buildTextField(
             controller: _passwordController,
             hintText: 'Password',
+            prefixIcon: Icons.lock_outline,
             isPassword: true,
             showPassword: _showPassword,
             onTogglePassword: () => setState(() => _showPassword = !_showPassword),
@@ -408,34 +479,71 @@ class _LoginPageState extends State<LoginPage> {
   Widget _buildTextField({
     required TextEditingController controller,
     required String hintText,
+    IconData? prefixIcon,
     TextInputType? keyboardType,
     bool isPassword = false,
     bool showPassword = false,
     VoidCallback? onTogglePassword,
     String? Function(String?)? validator,
   }) {
-    return Container(
-      height: 56,
-      decoration: BoxDecoration(color: const Color(0xFFE9EEF2), borderRadius: BorderRadius.circular(16)),
-      child: TextFormField(
-        controller: controller,
-        keyboardType: keyboardType,
-        obscureText: isPassword && !showPassword,
-        validator: validator,
-        style: const TextStyle(fontSize: 16, color: Color(0xFF828282)),
-        decoration: InputDecoration(
-          hintText: hintText,
-          hintStyle: const TextStyle(color: Color(0xFF828282), fontSize: 16),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-          suffixIcon: isPassword
-              ? IconButton(
-                  icon: Icon(showPassword ? Icons.visibility_off : Icons.visibility, color: const Color(0xFF828282)),
-                  onPressed: onTogglePassword,
-                )
-              : null,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          height: 60,
+          decoration: BoxDecoration(
+            color: const Color(0xFFE9EEF2),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: TextFormField(
+            controller: controller,
+            keyboardType: keyboardType,
+            obscureText: isPassword && !showPassword,
+            validator: validator,
+            style: const TextStyle(fontSize: 16, color: Color(0xFF4A4A4A)),
+            decoration: InputDecoration(
+              hintText: hintText,
+              hintStyle: const TextStyle(color: Color(0xFF828282), fontSize: 16),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+              prefixIcon: prefixIcon != null 
+                  ? Icon(prefixIcon, color: const Color(0xFF828282))
+                  : null,
+              suffixIcon: isPassword
+                  ? IconButton(
+                      icon: Icon(showPassword ? Icons.visibility_off : Icons.visibility, color: const Color(0xFF828282)),
+                      onPressed: onTogglePassword,
+                    )
+                  : null,
+              errorStyle: const TextStyle(color: Colors.red, fontSize: 12),
+            ),
+          ),
         ),
-      ),
+        const SizedBox(height: 4),
+        Builder(
+          builder: (context) {
+            final formField = context.findAncestorWidgetOfExactType<TextFormField>();
+            if (formField == null) return const SizedBox.shrink();
+            final errorText = formField.validator?.call(controller.text);
+            return errorText != null && errorText.isNotEmpty
+                ? Padding(
+                    padding: const EdgeInsets.only(left: 12.0),
+                    child: Text(
+                      errorText,
+                      style: const TextStyle(color: Colors.red, fontSize: 12),
+                    ),
+                  )
+                : const SizedBox.shrink();
+          },
+        ),
+      ],
     );
   }
 
@@ -449,11 +557,26 @@ class _LoginPageState extends State<LoginPage> {
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFFF3AB3F),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          elevation: 0,
+          elevation: 2,
+          shadowColor: const Color(0xFFF3AB3F).withOpacity(0.5),
         ),
         child: _isLoading
-            ? const CircularProgressIndicator(color: Colors.white)
-            : const Text('Login', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: Colors.white)),
+            ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2.5,
+                ),
+              )
+            : const Text(
+                'Sign In',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
       ),
     );
   }
@@ -461,9 +584,20 @@ class _LoginPageState extends State<LoginPage> {
   Widget _buildForgotPassword() {
     return Align(
       alignment: Alignment.center,
-      child: GestureDetector(
-        onTap: () => Navigator.push(context, SlideFadePageRoute(page: ForgotPassword())),
-        child: const Text('Forgot password?', style: TextStyle(fontSize: 16, color: Color(0xFF326789), decoration: TextDecoration.underline)),
+      child: TextButton(
+        onPressed: () => Navigator.push(context, SlideFadePageRoute(page: ForgotPassword())),
+        style: TextButton.styleFrom(
+          foregroundColor: const Color(0xFF326789),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        ),
+        child: const Text(
+          'Forgot password?',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
+            decoration: TextDecoration.underline,
+          ),
+        ),
       ),
     );
   }
@@ -472,8 +606,24 @@ class _LoginPageState extends State<LoginPage> {
     bool anyLoadingInProgress = _isLoading || _isGoogleLoading || _isFacebookLoading || _isInstagramLoading;
     return Column(
       children: [
-        const Text('-Or login with-', style: TextStyle(fontSize: 16, color: Color(0xFF000000))),
-        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(child: Divider(color: Colors.grey.shade400)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'Or sign in with',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            Expanded(child: Divider(color: Colors.grey.shade400)),
+          ],
+        ),
+        const SizedBox(height: 20),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -508,20 +658,38 @@ class _LoginPageState extends State<LoginPage> {
     bool isLoading = false,
   }) {
     return Container(
-      width: 48, height: 48,
+      width: 54,
+      height: 54,
       decoration: BoxDecoration(
         color: backgroundColor ?? Colors.white,
         shape: BoxShape.circle,
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4, offset: const Offset(0, 2))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: isLoading ? null : onPressed,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(27),
           child: Center(
             child: isLoading
-                ? SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.0, valueColor: AlwaysStoppedAnimation<Color>((backgroundColor == Colors.white || backgroundColor == null) ? Theme.of(context).primaryColorDark : Colors.white)))
+                ? SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.0,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        (backgroundColor == Colors.white || backgroundColor == null)
+                            ? Theme.of(context).primaryColorDark
+                            : Colors.white,
+                      ),
+                    ),
+                  )
                 : child,
           ),
         ),
@@ -530,15 +698,27 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Widget _buildRegisterLink() {
-    return RichText(
-      text: TextSpan(
-        style: const TextStyle(fontSize: 16, color: Color(0xFF000000)),
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const TextSpan(text: 'Don\'t have an account? '),
-          WidgetSpan(
-            child: GestureDetector(
-              onTap: () => Navigator.push(context, SlideFadePageRoute(page: const RegisterPage())),
-              child: const Text('Create new', style: TextStyle(fontSize: 16, color: Color(0xFF326789), fontWeight: FontWeight.w500, decoration: TextDecoration.underline)),
+          Text(
+            'Don\'t have an account? ',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey.shade700,
+            ),
+          ),
+          GestureDetector(
+            onTap: () => Navigator.push(context, SlideFadePageRoute(page: const RegisterPage())),
+            child: const Text(
+              'Sign Up',
+              style: TextStyle(
+                fontSize: 16,
+                color: Color(0xFF326789),
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
@@ -550,14 +730,23 @@ class _LoginPageState extends State<LoginPage> {
 class CurvedLinesPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = const Color(0xFF326789).withOpacity(0.3)..strokeWidth = 2..style = PaintingStyle.stroke;
-    final path = Path();
-    path.moveTo(0, size.height * 0.5);
-    path.quadraticBezierTo(size.width * 0.5, size.height * 0.2, size.width, size.height * 0.5);
-    path.moveTo(0, size.height * 0.7);
-    path.quadraticBezierTo(size.width * 0.5, size.height * 0.4, size.width, size.height * 0.7);
-    canvas.drawPath(path, paint);
+    final paint = Paint()
+      ..color = Colors.white.withOpacity(0.2)
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+    
+    final path1 = Path();
+    path1.moveTo(0, size.height * 0.5);
+    path1.quadraticBezierTo(size.width * 0.5, size.height * 0.2, size.width, size.height * 0.5);
+    
+    final path2 = Path();
+    path2.moveTo(0, size.height * 0.7);
+    path2.quadraticBezierTo(size.width * 0.5, size.height * 0.4, size.width, size.height * 0.7);
+    
+    canvas.drawPath(path1, paint);
+    canvas.drawPath(path2, paint);
   }
+  
   @override
   bool shouldRepaint(CustomPainter oldDelegate) => false;
 }

@@ -1,5 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:pocketbase/pocketbase.dart'; // Impor PocketBase
+import 'package:volunteervibe/services/pocketbase_service.dart'; // Impor PocketBaseService
+import 'package:intl/intl.dart'; // Untuk pemformatan tanggal
+import 'package:share_plus/share_plus.dart'; // Impor share_plus
+import 'package:url_launcher/url_launcher.dart'; // Impor url_launcher untuk tautan aplikasi langsung
+import 'package:volunteervibe/utils/app_constants.dart'; // Impor app_constants.dart
 
 class SocialSharingScreen extends StatefulWidget {
   @override
@@ -7,41 +13,10 @@ class SocialSharingScreen extends StatefulWidget {
 }
 
 class _SocialSharingScreenState extends State<SocialSharingScreen> {
-  final List<Map<String, dynamic>> _recentActivities = [
-    {
-      'title': 'Beach Cleanup Drive',
-      'organization': 'Ocean Warriors',
-      'date': 'Dec 10, 2024',
-      'points': 50,
-      'hours': 4,
-      'participants': 45,
-      'image': 'https://images.unsplash.com/photo-1583212292454-1fe6229603b7?w=400',
-      'category': 'Environment',
-      'shared': false,
-    },
-    {
-      'title': 'Food Bank Volunteer',
-      'organization': 'Community Kitchen',
-      'date': 'Dec 5, 2024',
-      'points': 40,
-      'hours': 3,
-      'participants': 30,
-      'image': 'https://images.unsplash.com/photo-1593113598332-cd288d649433?w=400',
-      'category': 'Community',
-      'shared': true,
-    },
-    {
-      'title': 'Reading Program for Kids',
-      'organization': 'Bright Futures',
-      'date': 'Nov 28, 2024',
-      'points': 35,
-      'hours': 3,
-      'participants': 20,
-      'image': 'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=400',
-      'category': 'Education',
-      'shared': true,
-    },
-  ];
+  final PocketBaseService _pbService = PocketBaseService(); // Instance dari PocketBaseService
+
+  List<RecordModel> _recentActivities = []; // Mengubah menjadi RecordModel
+  bool _isLoading = true;
 
   final List<Map<String, dynamic>> _socialPlatforms = [
     {
@@ -49,33 +24,80 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
       'icon': Icons.facebook,
       'color': Color(0xFF1877F2),
       'connected': true,
+      // URL berbagi web resmi untuk Facebook (direkomendasikan)
+      'share_url_template': 'https://www.facebook.com/sharer/sharer.php?u={link}&quote={text}', 
     },
     {
       'name': 'Instagram',
       'icon': Icons.camera_alt,
       'color': Color(0xFFE4405F),
       'connected': true,
+      // Instagram sangat membatasi berbagi teks langsung ke feed melalui skema URL.
+      // `share_plus` akan membuka aplikasi Instagram, dan pengguna mungkin perlu menyalin/menempel teks secara manual.
+      // Untuk berbagi gambar/video ke Instagram Story, share_plus memiliki metode shareXFiles.
     },
     {
       'name': 'Twitter',
-      'icon': Icons.alternate_email,
+      'icon': Icons.alternate_email, // Ganti dengan Icons.twitter jika menggunakan font_awesome
       'color': Color(0xFF1DA1F2),
       'connected': false,
+      'share_url_template': 'https://twitter.com/intent/tweet?text={text}&url={link}', 
     },
     {
       'name': 'LinkedIn',
-      'icon': Icons.work,
+      'icon': Icons.work, // Ganti dengan Icons.linkedin jika menggunakan font_awesome
       'color': Color(0xFF0A66C2),
       'connected': false,
+      'share_url_template': 'https://www.linkedin.com/shareArticle?mini=true&url={link}&title={title}&summary={description}', 
     },
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchRecentActivities(); // Ambil data saat inisialisasi
+  }
+
+  Future<void> _fetchRecentActivities() async {
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      final currentUser = _pbService.getCurrentUser();
+      if (currentUser != null) {
+        // Pastikan 'organization_id' dan 'categories_id' diperluas (expanded)
+        final events = await _pbService.fetchJoinedEvents(userId: currentUser.id);
+        setState(() {
+          _recentActivities = events;
+        });
+      } else {
+        setState(() {
+          _recentActivities = [];
+        });
+        // Opsional, tampilkan pesan bahwa pengguna tidak login
+      }
+    } catch (e) {
+      print("Error fetching recent activities: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Gagal memuat aktivitas: $e")),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'Social Sharing',
+          'Berbagi Sosial',
           style: TextStyle(
             fontWeight: FontWeight.bold,
             color: Color(0xFF2D3748),
@@ -95,15 +117,20 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
         ],
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildSharingStats(),
-              _buildConnectedAccounts(),
-              _buildRecentActivities(),
-              _buildSharingTips(),
-            ],
+        child: RefreshIndicator( // Menambahkan RefreshIndicator
+          onRefresh: _fetchRecentActivities,
+          color: Color(0xFF6C63FF),
+          child: SingleChildScrollView(
+            physics: AlwaysScrollableScrollPhysics(), // Memastikan scrollability untuk RefreshIndicator
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSharingStats(),
+                _buildConnectedAccounts(),
+                _buildRecentActivities(),
+                _buildSharingTips(),
+              ],
+            ),
           ),
         ),
       ),
@@ -138,7 +165,7 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Sharing Impact',
+                      'Dampak Berbagi',
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -146,7 +173,7 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
                       ),
                     ),
                     Text(
-                      'Inspire others to volunteer',
+                      'Inspirasi orang lain untuk menjadi sukarelawan',
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.white.withOpacity(0.9),
@@ -161,13 +188,13 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
           Row(
             children: [
               Expanded(
-                child: _buildStatItem('7', 'Posts Shared', Icons.share),
+                child: _buildStatItem('7', 'Postingan Dibagikan', Icons.share),
               ),
               Expanded(
-                child: _buildStatItem('142', 'People Reached', Icons.people),
+                child: _buildStatItem('142', 'Orang Terjangkau', Icons.people),
               ),
               Expanded(
-                child: _buildStatItem('23', 'Inspired to Join', Icons.favorite),
+                child: _buildStatItem('23', 'Terinspirasi Bergabung', Icons.favorite),
               ),
             ],
           ),
@@ -230,7 +257,7 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
           Row(
             children: [
               Text(
-                'Connected Accounts',
+                'Akun Terhubung',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -241,7 +268,7 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
               TextButton(
                 onPressed: _showSocialSettings,
                 child: Text(
-                  'Manage',
+                  'Kelola',
                   style: TextStyle(color: Color(0xFF6C63FF)),
                 ),
               ),
@@ -316,7 +343,7 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
                   ),
                 ),
                 Text(
-                  platform['connected'] ? 'Connected' : 'Not connected',
+                  platform['connected'] ? 'Terhubung' : 'Tidak Terhubung',
                   style: TextStyle(
                     fontSize: 10,
                     color: platform['connected'] 
@@ -339,7 +366,7 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Recent Activities',
+            'Aktivitas Terbaru',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -347,20 +374,52 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
             ),
           ),
           SizedBox(height: 16),
-          ListView.builder(
-            shrinkWrap: true,
-            physics: NeverScrollableScrollPhysics(),
-            itemCount: _recentActivities.length,
-            itemBuilder: (context, index) {
-              return _buildActivityCard(_recentActivities[index]);
-            },
-          ),
+          _isLoading
+              ? Center(child: CircularProgressIndicator(color: Color(0xFF6C63FF)))
+              : _recentActivities.isEmpty
+                  ? _buildEmptyState() // Gunakan state kosong khusus untuk aktivitas
+                  : ListView.builder(
+                      shrinkWrap: true,
+                      physics: NeverScrollableScrollPhysics(),
+                      itemCount: _recentActivities.length,
+                      itemBuilder: (context, index) {
+                        return _buildActivityCard(_recentActivities[index]);
+                      },
+                    ),
         ],
       ),
     );
   }
 
-  Widget _buildActivityCard(Map<String, dynamic> activity) {
+  Widget _buildActivityCard(RecordModel activityRecord) {
+    // Ekstrak data dari PocketBase RecordModel
+    final String title = activityRecord.getStringValue('title', 'Tidak Ada Judul');
+    // Asumsi ada field 'date' dan bisa diparse untuk tanggal event.
+    final DateTime eventDate = DateFormat('yyyy-MM-dd').parse(activityRecord.getStringValue('date', DateTime.now().toIso8601String()));
+    // Asumsi ada field 'duration_hours' atau sejenisnya, atau hitung placeholder.
+    // Mari kita asumsikan ada field 'duration_hours', default ke 0 jika tidak ditemukan.
+    final int hours = activityRecord.getIntValue('duration_hours', 4); // Default ke 4 jam jika tidak ditentukan
+
+    final int points = activityRecord.getIntValue('point_event', 0);
+    final int maxParticipants = activityRecord.getIntValue('max_participant', 0);
+
+    // Akses relasi yang diperluas (expanded relations)
+    final organization = activityRecord.expand['organization_id']?.first;
+    final category = activityRecord.expand['categories_id']?.first;
+
+    final String orgName = organization?.getStringValue('name', 'Organisasi Tidak Dikenal') ?? 'Organisasi Tidak Dikenal';
+    final String categoryName = category?.getStringValue('name', 'Tanpa Kategori') ?? 'Tanpa Kategori';
+
+    // Dapatkan URL avatar organisasi
+    String? orgAvatarUrl;
+    if (organization != null && organization.getStringValue('avatar').isNotEmpty) {
+      orgAvatarUrl = _pbService.getFileUrl(organization, organization.getStringValue('avatar'));
+    }
+
+    // Asumsi ada field 'isShared' di record event, atau bisa disimulasikan
+    bool isShared = activityRecord.data.containsKey('isShared') ? activityRecord.getBoolValue('isShared') : false;
+
+
     return Container(
       margin: EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
@@ -381,9 +440,17 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
             height: 120,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-              gradient: LinearGradient(
+              gradient: orgAvatarUrl == null ? LinearGradient( // Gunakan gradien jika tidak ada gambar
                 colors: [Color(0xFF6C63FF), Color(0xFF9F7AEA)],
-              ),
+              ) : null,
+              // Tampilkan gambar organisasi di sini
+              image: orgAvatarUrl != null
+                  ? DecorationImage(
+                      image: NetworkImage(orgAvatarUrl),
+                      fit: BoxFit.cover,
+                      colorFilter: ColorFilter.mode(Colors.black.withOpacity(0.3), BlendMode.darken), // Opsional: gelapkan gambar agar teks mudah dibaca
+                    )
+                  : null, // Jika tidak ada gambar, tampilkan gradien
             ),
             child: Stack(
               children: [
@@ -393,7 +460,7 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
                   child: Container(
                     padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: activity['shared'] 
+                      color: isShared 
                           ? Color(0xFF10B981) 
                           : Colors.white.withOpacity(0.9),
                       borderRadius: BorderRadius.circular(12),
@@ -402,30 +469,24 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          activity['shared'] ? Icons.check : Icons.share,
+                          isShared ? Icons.check : Icons.share,
                           size: 12,
-                          color: activity['shared'] ? Colors.white : Color(0xFF6C63FF),
+                          color: isShared ? Colors.white : Color(0xFF6C63FF),
                         ),
                         SizedBox(width: 4),
                         Text(
-                          activity['shared'] ? 'Shared' : 'Share',
+                          isShared ? 'Dibagikan' : 'Bagikan',
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
-                            color: activity['shared'] ? Colors.white : Color(0xFF6C63FF),
+                            color: isShared ? Colors.white : Color(0xFF6C63FF),
                           ),
                         ),
                       ],
                     ),
                   ),
                 ),
-                Center(
-                  child: Icon(
-                    _getCategoryIcon(activity['category']),
-                    size: 48,
-                    color: Colors.white,
-                  ),
-                ),
+                // Icon Center dihapus untuk menghilangkan logo di tengah gambar organisasi
               ],
             ),
           ),
@@ -435,7 +496,7 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  activity['title'],
+                  title,
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -444,30 +505,43 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
                 ),
                 SizedBox(height: 4),
                 Text(
-                  activity['organization'],
+                  orgName,
                   style: TextStyle(
                     color: Color(0xFF718096),
                     fontSize: 14,
                   ),
                 ),
                 SizedBox(height: 12),
+                // Tampilkan tanggal event di sini
                 Row(
                   children: [
-                    _buildActivityStat(Icons.star, '${activity['points']} pts', Color(0xFFFFD700)),
+                    Icon(Icons.calendar_today, size: 14, color: Colors.grey.shade500),
+                    SizedBox(width: 6),
+                    Text(
+                      DateFormat('MMM dd,EEEE').format(eventDate), // Tanggal yang diformat
+                      style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 12), // Menambahkan spasi untuk baris tanggal baru
+                Row(
+                  children: [
+                    _buildActivityStat(Icons.star, '$points pts', Color(0xFFFFD700)),
                     SizedBox(width: 16),
-                    _buildActivityStat(Icons.access_time, '${activity['hours']}h', Color(0xFF6C63FF)),
+                    // Menggunakan ikon jam dan menampilkan durasi jam event.
+                    _buildActivityStat(Icons.access_time, '${hours}h', Color(0xFF6C63FF)),
                     SizedBox(width: 16),
-                    _buildActivityStat(Icons.people, '${activity['participants']}', Color(0xFF10B981)),
+                    _buildActivityStat(Icons.people, '$maxParticipants', Color(0xFF10B981)),
                   ],
                 ),
                 SizedBox(height: 16),
-                if (!activity['shared'])
+                if (!isShared)
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(
-                      onPressed: () => _showShareDialog(activity),
+                      onPressed: () => _showShareDialog(activityRecord), // Teruskan record aktivitas
                       icon: Icon(Icons.share, size: 18),
-                      label: Text('Share Your Impact'),
+                      label: Text('Bagikan Dampak Anda'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Color(0xFF6C63FF),
                         foregroundColor: Colors.white,
@@ -491,7 +565,7 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
                         Icon(Icons.check_circle, color: Color(0xFF10B981), size: 18),
                         SizedBox(width: 8),
                         Text(
-                          'Shared successfully',
+                          'Berhasil Dibagikan',
                           style: TextStyle(
                             color: Color(0xFF10B981),
                             fontWeight: FontWeight.w600,
@@ -527,7 +601,7 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
 
   Widget _buildSharingTips() {
     return Container(
-      margin: EdgeInsets.symmetric(horizontal: 24),
+      margin: EdgeInsets.symmetric(horizontal: 24, vertical: 24), // Menambahkan margin vertikal
       padding: EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Color(0xFFF7FAFC),
@@ -542,7 +616,7 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
               Icon(Icons.lightbulb, color: Color(0xFF6C63FF)),
               SizedBox(width: 8),
               Text(
-                'Sharing Tips',
+                'Tips Berbagi',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -552,10 +626,10 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
             ],
           ),
           SizedBox(height: 16),
-          _buildTip('Share your volunteer experiences to inspire others'),
-          _buildTip('Use hashtags like #VolunteerVibe #MakeADifference'),
-          _buildTip('Tag friends who might be interested in volunteering'),
-          _buildTip('Share photos from your volunteer activities'),
+          _buildTip('Bagikan pengalaman sukarelawan Anda untuk menginspirasi orang lain'),
+          _buildTip('Gunakan hashtag seperti #VolunteerVibe #BuatPerbedaan'),
+          _buildTip('Tag teman-teman yang mungkin tertarik untuk menjadi sukarelawan'),
+          _buildTip('Bagikan foto dari aktivitas sukarelawan Anda'),
         ],
       ),
     );
@@ -591,7 +665,16 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
     );
   }
 
-  void _showShareDialog(Map<String, dynamic> activity) {
+  void _showShareDialog(RecordModel activityRecord) { // Mengubah parameter menjadi RecordModel
+    final String title = activityRecord.getStringValue('title', 'Tidak Ada Judul');
+    final String orgName = activityRecord.expand['organization_id']?.first.getStringValue('name', 'Organisasi Tidak Dikenal') ?? 'Organisasi Tidak Dikenal';
+    final int points = activityRecord.getIntValue('point_event', 0);
+    // Menggunakan tanggal event yang sebenarnya untuk deskripsi
+    final DateTime eventDate = DateFormat('yyyy-MM-dd').parse(activityRecord.getStringValue('date', DateTime.now().toIso8601String()));
+    final String formattedDate = DateFormat('MMMM dd,EEEE').format(eventDate);
+    
+    final String description = activityRecord.getStringValue('description', 'Ini adalah pengalaman hebat berkontribusi untuk komunitas kami!');
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -609,7 +692,7 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
               child: Row(
                 children: [
                   Text(
-                    'Share Your Impact',
+                    'Bagikan Dampak Anda',
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -629,9 +712,9 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
                 padding: EdgeInsets.symmetric(horizontal: 20),
                 child: Column(
                   children: [
-                    _buildSharePreview(activity),
+                    _buildSharePreview(activityRecord), // Teruskan record aktivitas
                     SizedBox(height: 24),
-                    _buildSharePlatforms(activity),
+                    _buildSharePlatforms(activityRecord), // Teruskan record aktivitas
                   ],
                 ),
               ),
@@ -642,7 +725,15 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
     );
   }
 
-  Widget _buildSharePreview(Map<String, dynamic> activity) {
+  Widget _buildSharePreview(RecordModel activityRecord) { // Mengubah parameter menjadi RecordModel
+    final String title = activityRecord.getStringValue('title', 'Tidak Ada Judul');
+    final String orgName = activityRecord.expand['organization_id']?.first.getStringValue('name', 'Organisasi Tidak Dikenal') ?? 'Organisasi Tidak Dikenal';
+    final int points = activityRecord.getIntValue('point_event', 0);
+    final DateTime eventDate = DateFormat('yyyy-MM-dd').parse(activityRecord.getStringValue('date', DateTime.now().toIso8601String()));
+    final String formattedDate = DateFormat('MMMM dd,EEEE').format(eventDate);
+    final String description = activityRecord.getStringValue('description', 'Ini adalah pengalaman hebat berkontribusi untuk komunitas kami!');
+
+
     return Container(
       padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -654,7 +745,7 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Preview',
+            'Pratinjau',
             style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
@@ -679,7 +770,7 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '🌟 Just completed "${activity['title']}" with ${activity['organization']}!',
+                  '🌟 Baru saja menyelesaikan "$title" dengan $orgName pada $formattedDate!', // Teks diperbarui dengan tanggal
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
@@ -688,7 +779,7 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'Earned ${activity['points']} points and contributed ${activity['hours']} hours to make a difference in our community! 💪',
+                  'Saya mendapatkan $points poin untuk acara ini. ${description.isNotEmpty ? description : 'Ini adalah pengalaman hebat berkontribusi untuk komunitas kami!'} 💪', // Deskripsi diperbarui
                   style: TextStyle(
                     fontSize: 14,
                     color: Color(0xFF4A5568),
@@ -696,7 +787,7 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
                 ),
                 SizedBox(height: 8),
                 Text(
-                  '#VolunteerVibe #MakeADifference #CommunityService',
+                  '#VolunteerVibe #BuatPerbedaan #LayananKomunitas',
                   style: TextStyle(
                     fontSize: 12,
                     color: Color(0xFF6C63FF),
@@ -711,14 +802,14 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
     );
   }
 
-  Widget _buildSharePlatforms(Map<String, dynamic> activity) {
+  Widget _buildSharePlatforms(RecordModel activityRecord) { // Mengubah parameter menjadi RecordModel
     final connectedPlatforms = _socialPlatforms.where((p) => p['connected']).toList();
     
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Share to',
+          'Bagikan ke',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
@@ -738,16 +829,16 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
           itemCount: connectedPlatforms.length,
           itemBuilder: (context, index) {
             final platform = connectedPlatforms[index];
-            return _buildShareButton(platform, activity);
+            return _buildShareButton(platform, activityRecord); // Teruskan record aktivitas
           },
         ),
         SizedBox(height: 16),
         SizedBox(
           width: double.infinity,
           child: OutlinedButton.icon(
-            onPressed: () => _copyToClipboard(activity),
+            onPressed: () => _copyToClipboard(activityRecord), // Teruskan record aktivitas
             icon: Icon(Icons.copy),
-            label: Text('Copy Link'),
+            label: Text('Salin Tautan'),
             style: OutlinedButton.styleFrom(
               side: BorderSide(color: Color(0xFF6C63FF)),
               foregroundColor: Color(0xFF6C63FF),
@@ -761,9 +852,9 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
     );
   }
 
-  Widget _buildShareButton(Map<String, dynamic> platform, Map<String, dynamic> activity) {
+  Widget _buildShareButton(Map<String, dynamic> platform, RecordModel activityRecord) { // Mengubah parameter menjadi RecordModel
     return ElevatedButton(
-      onPressed: () => _shareToplatform(platform, activity),
+      onPressed: () => _shareToplatform(platform, activityRecord), // Teruskan record aktivitas
       style: ElevatedButton.styleFrom(
         backgroundColor: platform['color'],
         foregroundColor: Colors.white,
@@ -806,7 +897,7 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
               child: Row(
                 children: [
                   Text(
-                    'Social Settings',
+                    'Pengaturan Sosial',
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -816,7 +907,7 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
                   Spacer(),
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: Text('Done'),
+                    child: Text('Selesai'),
                   ),
                 ],
               ),
@@ -875,7 +966,7 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
                   ),
                 ),
                 Text(
-                  platform['connected'] ? 'Connected' : 'Not connected',
+                  platform['connected'] ? 'Terhubung' : 'Tidak Terhubung',
                   style: TextStyle(
                     fontSize: 14,
                     color: platform['connected'] ? Color(0xFF10B981) : Color(0xFF718096),
@@ -898,41 +989,130 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
     );
   }
 
-  void _shareToplatform(Map<String, dynamic> platform, Map<String, dynamic> activity) {
-    Navigator.pop(context);
+  void _shareToplatform(Map<String, dynamic> platform, RecordModel activityRecord) async {
+    Navigator.pop(context); // Tutup dialog berbagi terlebih dahulu
+
+    final String title = activityRecord.getStringValue('title', 'Tidak Ada Judul');
+    final String orgName = activityRecord.expand['organization_id']?.first.getStringValue('name', 'Organisasi Tidak Dikenal') ?? 'Organisasi Tidak Dikenal';
+    final int points = activityRecord.getIntValue('point_event', 0);
+    final DateTime eventDate = DateFormat('yyyy-MM-dd').parse(activityRecord.getStringValue('date', DateTime.now().toIso8601String()));
+    final String formattedDate = DateFormat('MMMM dd,EEEE').format(eventDate);
+    final String description = activityRecord.getStringValue('description', 'Ini adalah pengalaman hebat berkontribusi untuk komunitas kami!');
+
+    // Buat teks berbagi generik
+    final String genericShareText = '🌟 Baru saja menyelesaikan "$title" dengan $orgName pada $formattedDate! Saya mendapatkan $points poin untuk acara ini. ${description.isNotEmpty ? description : 'Ini adalah pengalaman hebat berkribusi untuk komunitas kami!'} 💪 #VolunteerVibe #BuatPerbedaan #LayananKomunitas';
     
-    // Simulate sharing
+    // Bangun tautan deep link dan tautan web menggunakan AppConstants
+    final String appDeepLink = '${AppConstants.appDeepLinkScheme}://events?id=${activityRecord.id}';
+    final String webLink = '${AppConstants.appWebDomain}/events/${activityRecord.id}'; // Contoh: https://www.yourdomain.com/events/event_id
+
+    try {
+      if (platform['name'] == 'Facebook') {
+        // Berbagi resmi Facebook seringkali lebih suka URL web
+        String facebookShareUrl = platform['share_url_template']
+            .replaceAll('{link}', Uri.encodeComponent(webLink))
+            .replaceAll('{text}', Uri.encodeComponent(genericShareText));
+        
+        if (await canLaunchUrl(Uri.parse(facebookShareUrl))) {
+          await launchUrl(Uri.parse(facebookShareUrl), mode: LaunchMode.externalApplication);
+          _updateActivitySharedStatus(activityRecord, platform['name']);
+        } else {
+          // Fallback ke berbagi generik jika peluncuran URL langsung gagal
+          await Share.share(genericShareText);
+          _updateActivitySharedStatus(activityRecord, platform['name']); 
+        }
+      } else if (platform['name'] == 'Instagram') {
+        // Untuk Instagram, kami akan menggunakan Share.share.
+        // Ini akan membuka dialog berbagi sistem dan Instagram akan menjadi salah satu pilihannya.
+        // Pengguna mungkin perlu menempelkan teks secara manual.
+        await Share.share(genericShareText);
+        _updateActivitySharedStatus(activityRecord, platform['name']); 
+      } else if (platform.containsKey('share_url_template')) {
+        // Untuk platform lain yang mungkin menggunakan URL berbagi web (seperti Twitter, LinkedIn)
+        String shareUrl = platform['share_url_template']
+            .replaceAll('{link}', Uri.encodeComponent(webLink))
+            .replaceAll('{text}', Uri.encodeComponent(genericShareText))
+            .replaceAll('{title}', Uri.encodeComponent(title)) 
+            .replaceAll('{description}', Uri.encodeComponent(description)); 
+
+        if (await canLaunchUrl(Uri.parse(shareUrl))) {
+          await launchUrl(Uri.parse(shareUrl), mode: LaunchMode.externalApplication);
+          _updateActivitySharedStatus(activityRecord, platform['name']);
+        } else {
+          await Share.share(genericShareText); // Fallback ke berbagi generik
+          _updateActivitySharedStatus(activityRecord, platform['name']);
+        }
+      } else {
+        // Berbagi generik untuk platform lain yang tidak ditangani secara eksplisit
+        await Share.share(genericShareText);
+        _updateActivitySharedStatus(activityRecord, platform['name']);
+      }
+      
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal berbagi ke ${platform['name']}: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  // Helper untuk memperbarui UI setelah berhasil berbagi
+  void _updateActivitySharedStatus(RecordModel activityRecord, String platformName) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Shared to ${platform['name']} successfully!'),
+        content: Text('Berhasil dibagikan ke $platformName!'),
         backgroundColor: Color(0xFF10B981),
         behavior: SnackBarBehavior.floating,
       ),
     );
-
-    // Update activity as shared
-    setState(() {
-      activity['shared'] = true;
-    });
+    int index = _recentActivities.indexOf(activityRecord);
+    if (index != -1) {
+      RecordModel updatedRecord = RecordModel(
+        collectionId: activityRecord.collectionId,
+        collectionName: activityRecord.collectionName,
+        id: activityRecord.id,
+        created: activityRecord.created,
+        updated: activityRecord.updated,
+        data: Map<String, dynamic>.from(activityRecord.data)..['isShared'] = true,
+        expand: activityRecord.expand,
+      );
+      setState(() {
+        _recentActivities[index] = updatedRecord;
+      });
+    }
   }
 
-  void _copyToClipboard(Map<String, dynamic> activity) {
-    final text = '🌟 Just completed "${activity['title']}" with ${activity['organization']}! Earned ${activity['points']} points and contributed ${activity['hours']} hours to make a difference! #VolunteerVibe #MakeADifference';
-    
-    Clipboard.setData(ClipboardData(text: text));
+  void _copyToClipboard(RecordModel activityRecord) { // Mengubah parameter menjadi RecordModel
+    final String title = activityRecord.getStringValue('title', 'Tidak Ada Judul');
+    final String orgName = activityRecord.expand['organization_id']?.first.getStringValue('name', 'Organisasi Tidak Dikenal') ?? 'Organisasi Tidak Dikenal';
+    final int points = activityRecord.getIntValue('point_event', 0);
+    final DateTime eventDate = DateFormat('yyyy-MM-dd').parse(activityRecord.getStringValue('date', DateTime.now().toIso8601String()));
+    final String formattedDate = DateFormat('MMMM dd,EEEE').format(eventDate);
+    final String description = activityRecord.getStringValue('description', 'Ini adalah pengalaman hebat berkontribusi untuk komunitas kami!');
+
+    // Bangun tautan deep link dan tautan web menggunakan AppConstants
+    final String appDeepLink = '${AppConstants.appDeepLinkScheme}://events?id=${activityRecord.id}';
+    final String webLink = '${AppConstants.appWebDomain}/events/${activityRecord.id}'; // Contoh: https://www.yourdomain.com/events/event_id
+
+    final textToCopy = '🌟 Baru saja menyelesaikan "$title" dengan $orgName pada $formattedDate! Saya mendapatkan $points poin untuk acara ini. ${description.isNotEmpty ? description : 'Ini adalah pengalaman hebat berkontribusi untuk komunitas kami!'} � #VolunteerVibe #BuatPerbedaan #LayananKomunitas\n\nLihat selengkapnya: $webLink'; // Menggunakan tautan web untuk salin
+
+    Clipboard.setData(ClipboardData(text: textToCopy)); // Menggunakan textToCopy
     Navigator.pop(context);
     
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Copied to clipboard!'),
+        content: Text('Tautan disalin ke clipboard!'), // Pesan diperbarui
         backgroundColor: Color(0xFF6C63FF),
         behavior: SnackBarBehavior.floating,
       ),
     );
   }
 
-  IconData _getCategoryIcon(String category) {
-    switch (category) {
+  IconData _getCategoryIcon(String categoryName) {
+    switch (categoryName) {
       case 'Environment':
         return Icons.eco;
       case 'Education':
@@ -947,4 +1127,34 @@ class _SocialSharingScreenState extends State<SocialSharingScreen> {
         return Icons.volunteer_activism;
     }
   }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.event_note_rounded, size: 60, color: Colors.grey.shade400),
+            SizedBox(height: 16),
+            Text(
+              "Tidak Ada Aktivitas Saat Ini",
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF4A5568),
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              "Anda belum berpartisipasi dalam acara apa pun baru-baru ini. Mari beraksi dan buat perbedaan!",
+              style: TextStyle(color: Colors.grey.shade600),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
+�

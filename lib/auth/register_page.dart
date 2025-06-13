@@ -6,7 +6,6 @@ import 'package:pocketbase/pocketbase.dart';
 import 'login_page.dart'; // Ensure this path is correct
 import 'package:volunteervibe/pocketbase_client.dart';
 
-
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
 
@@ -14,7 +13,7 @@ class RegisterPage extends StatefulWidget {
   _RegisterPageState createState() => _RegisterPageState();
 }
 
-class _RegisterPageState extends State<RegisterPage> {
+class _RegisterPageState extends State<RegisterPage> with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -27,9 +26,25 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _isGoogleLoading = false;
   bool _isFacebookLoading = false;
   bool _isInstagramLoading = false;
+  
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
 
   // State for account type
   bool _isOrganization = false; // Defaults to User (false)
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeIn),
+    );
+    _animationController.forward();
+  }
 
   @override
   void dispose() {
@@ -37,6 +52,7 @@ class _RegisterPageState extends State<RegisterPage> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
+    _animationController.dispose();
     super.dispose();
   }
 
@@ -66,9 +82,12 @@ class _RegisterPageState extends State<RegisterPage> {
 
       if (emailExists) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('This email is already registered. Please use another email.'),
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('This email is already registered. Please use another email.'),
           backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ));
         setState(() => _isLoading = false);
         return;
@@ -103,6 +122,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 ],
               ),
             ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             actions: <Widget>[
               TextButton(
                 child: const Text('OK'),
@@ -132,12 +152,18 @@ class _RegisterPageState extends State<RegisterPage> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(errorMessage),
         backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('An error occurred: ${e.toString()}'),
         backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ));
     } finally {
       if (mounted) {
@@ -181,9 +207,12 @@ class _RegisterPageState extends State<RegisterPage> {
   
   Future<void> _signInWithInstagram() async {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Instagram login not implemented.'),
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Instagram login not implemented.'),
           backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ));
       }
   }
@@ -193,32 +222,50 @@ class _RegisterPageState extends State<RegisterPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFFFFFFF),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
-          child: Column(
-            children: [
-              Hero(tag: 'appLogoHero', child: _buildLogo()),
-              const SizedBox(height: 32),
-              _buildIllustration(),
-              const SizedBox(height: 48),
-              _buildForm(),
-              const SizedBox(height: 24),
-              _buildSignupButton(),
-              const SizedBox(height: 32),
-              _buildSocialLogin(),
-              const SizedBox(height: 24),
-              _buildLoginLink(),
-              const SizedBox(height: 24),
-            ],
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 24.0),
+            child: Column(
+              children: [
+                _buildHeader(),
+                const SizedBox(height: 24),
+                _buildIllustration(),
+                const SizedBox(height: 32),
+                _buildForm(),
+                const SizedBox(height: 24),
+                _buildSignupButton(),
+                const SizedBox(height: 24),
+                _buildSocialLogin(),
+                const SizedBox(height: 24),
+                _buildLoginLink(),
+                const SizedBox(height: 24),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
+  Widget _buildHeader() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.arrow_back_ios_rounded, color: Color(0xFF1B384A)),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        Hero(tag: 'appLogoHero', child: _buildLogo()),
+        const SizedBox(width: 48), // Balance the layout
+      ],
+    );
+  }
+
   Widget _buildLogo() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
           width: 32,
@@ -231,6 +278,13 @@ class _RegisterPageState extends State<RegisterPage> {
                 decoration: BoxDecoration(
                   color: const Color(0xFF1B384A),
                   borderRadius: BorderRadius.circular(4),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
               ),
               Positioned(
@@ -261,36 +315,35 @@ class _RegisterPageState extends State<RegisterPage> {
           ),
         ),
         const SizedBox(width: 8),
-        // [FIXED] TextStyle adjusted to prevent overflow
         const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center, // Better vertical alignment
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
               'VV',
               style: TextStyle(
-                fontSize: 22, // REDUCED from 24
+                fontSize: 22,
                 fontWeight: FontWeight.bold,
                 color: Color(0xFF1B384A),
-                height: 1.0, // Tighten line-height
+                height: 1.0,
               ),
             ),
             Text(
               'Volunteer',
               style: TextStyle(
-                fontSize: 9, // REDUCED from 10
+                fontSize: 9,
                 fontWeight: FontWeight.w500,
                 color: Color(0xFF1B384A),
-                height: 1.1, // Slight space for readability
+                height: 1.1,
               ),
             ),
             Text(
               'Vibe',
               style: TextStyle(
-                fontSize: 9, // REDUCED from 10
+                fontSize: 9,
                 fontWeight: FontWeight.w500,
                 color: Color(0xFF1B384A),
-                height: 1.1, // Slight space for readability
+                height: 1.1,
               ),
             ),
           ],
@@ -300,16 +353,37 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Widget _buildIllustration() {
-    return SizedBox(
-      height: 200,
+    return Container(
+      height: 180,
       width: double.infinity,
-      child: Image.asset(
-        'assets/amico.png',
-        fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) => const Icon(
-          Icons.image_not_supported_rounded,
-          size: 50,
-          color: Colors.grey,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Image.asset(
+          'assets/amico.png',
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) => Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFE9EEF2),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Center(
+              child: Icon(
+                Icons.image_not_supported_rounded,
+                size: 50,
+                color: Colors.grey,
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -321,19 +395,28 @@ class _RegisterPageState extends State<RegisterPage> {
       child: Column(
         children: [
           const Text(
-            'CREATE ACCOUNT',
+            'Create Your Account',
             style: TextStyle(
-              fontSize: 28,
+              fontSize: 24,
               fontWeight: FontWeight.bold,
               color: Color(0xFF1B384A),
             ),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 8),
+          Text(
+            'Join our community and start volunteering',
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 24),
           _buildAccountTypeSwitcher(),
           const SizedBox(height: 24),
           _buildTextField(
             controller: _nameController,
             hintText: _isOrganization ? 'Organization Name' : 'Full Name',
+            prefixIcon: Icons.person_outline,
             keyboardType: TextInputType.name,
             validator: (value) {
               if (value == null || value.isEmpty) return 'Name cannot be empty';
@@ -344,6 +427,7 @@ class _RegisterPageState extends State<RegisterPage> {
           _buildTextField(
             controller: _emailController,
             hintText: 'Email',
+            prefixIcon: Icons.email_outlined,
             keyboardType: TextInputType.emailAddress,
             validator: (value) {
               if (value == null || value.isEmpty) return 'Email cannot be empty';
@@ -355,6 +439,7 @@ class _RegisterPageState extends State<RegisterPage> {
           _buildTextField(
             controller: _passwordController,
             hintText: 'Password',
+            prefixIcon: Icons.lock_outline,
             isPassword: true,
             showPassword: _showPassword,
             onTogglePassword: () => setState(() => _showPassword = !_showPassword),
@@ -368,6 +453,7 @@ class _RegisterPageState extends State<RegisterPage> {
           _buildTextField(
             controller: _confirmPasswordController,
             hintText: 'Confirm Password',
+            prefixIcon: Icons.lock_outline,
             isPassword: true,
             showPassword: _showConfirmPassword,
             onTogglePassword: () => setState(() => _showConfirmPassword = !_showConfirmPassword),
@@ -383,12 +469,18 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Widget _buildAccountTypeSwitcher() {
-    final primaryColor = Theme.of(context).primaryColor;
     return Container(
-      height: 50,
+      height: 56,
       decoration: BoxDecoration(
-        color: Colors.grey.shade200,
-        borderRadius: BorderRadius.circular(12),
+        color: const Color(0xFFE9EEF2),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Stack(
         children: [
@@ -397,18 +489,18 @@ class _RegisterPageState extends State<RegisterPage> {
             duration: const Duration(milliseconds: 250),
             curve: Curves.easeInOut,
             child: Container(
-              width: (MediaQuery.of(context).size.width - 48*2) / 2, 
-              height: 50,
-              margin: const EdgeInsets.all(2),
+              width: (MediaQuery.of(context).size.width - 48 - 4) / 2, 
+              height: 48,
+              margin: const EdgeInsets.all(4),
               decoration: BoxDecoration(
-                color: primaryColor,
-                borderRadius: BorderRadius.circular(10),
+                color: const Color(0xFF1B384A),
+                borderRadius: BorderRadius.circular(12),
                 boxShadow: [
-                    BoxShadow(
-                      color: primaryColor.withOpacity(0.4),
-                      blurRadius: 8,
-                      offset: const Offset(0, 4),
-                    )
+                  BoxShadow(
+                    color: const Color(0xFF1B384A).withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  )
                 ]
               ),
             ),
@@ -437,7 +529,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 child: GestureDetector(
                   onTap: () => setState(() => _isOrganization = true),
                   child: Container(
-                      color: Colors.transparent,
+                    color: Colors.transparent,
                     child: Center(
                       child: Text(
                         'Organization',
@@ -461,6 +553,7 @@ class _RegisterPageState extends State<RegisterPage> {
   Widget _buildTextField({
     required TextEditingController controller,
     required String hintText,
+    IconData? prefixIcon,
     TextInputType? keyboardType,
     bool isPassword = false,
     bool showPassword = false,
@@ -468,22 +561,32 @@ class _RegisterPageState extends State<RegisterPage> {
     String? Function(String?)? validator,
   }) {
     return Container(
-      height: 56,
+      height: 60,
       decoration: BoxDecoration(
         color: const Color(0xFFE9EEF2),
         borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: TextFormField(
         controller: controller,
         keyboardType: keyboardType,
         obscureText: isPassword && !showPassword,
         validator: validator,
-        style: const TextStyle(fontSize: 16, color: Color(0xFF828282)),
+        style: const TextStyle(fontSize: 16, color: Color(0xFF4A4A4A)),
         decoration: InputDecoration(
           hintText: hintText,
           hintStyle: const TextStyle(color: Color(0xFF828282), fontSize: 16),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+          prefixIcon: prefixIcon != null 
+              ? Icon(prefixIcon, color: const Color(0xFF828282))
+              : null,
           suffixIcon: isPassword
               ? IconButton(
                   icon: Icon(
@@ -493,6 +596,10 @@ class _RegisterPageState extends State<RegisterPage> {
                   onPressed: onTogglePassword,
                 )
               : null,
+          errorStyle: const TextStyle(
+            color: Colors.red,
+            fontSize: 12,
+          ),
         ),
       ),
     );
@@ -507,13 +614,25 @@ class _RegisterPageState extends State<RegisterPage> {
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFFF3AB3F),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          elevation: 0,
+          elevation: 2,
+          shadowColor: const Color(0xFFF3AB3F).withOpacity(0.5),
         ),
         child: _isLoading
-            ? const CircularProgressIndicator(color: Colors.white)
+            ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2.5,
+                ),
+              )
             : const Text(
-                'Sign Up',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: Colors.white),
+                'Create Account',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
               ),
       ),
     );
@@ -522,11 +641,24 @@ class _RegisterPageState extends State<RegisterPage> {
   Widget _buildSocialLogin() {
     return Column(
       children: [
-        const Text(
-          '- Or sign up with -',
-          style: TextStyle(fontSize: 16, color: Color(0xFF000000)),
+        Row(
+          children: [
+            Expanded(child: Divider(color: Colors.grey.shade400)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'Or sign up with',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            Expanded(child: Divider(color: Colors.grey.shade400)),
+          ],
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 20),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -577,16 +709,16 @@ class _RegisterPageState extends State<RegisterPage> {
     bool isLoading = false,
   }) {
     return Container(
-      width: 48,
-      height: 48,
+      width: 54,
+      height: 54,
       decoration: BoxDecoration(
         color: backgroundColor ?? Colors.white,
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -594,7 +726,7 @@ class _RegisterPageState extends State<RegisterPage> {
         color: Colors.transparent,
         child: InkWell(
           onTap: isLoading ? null : onPressed,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(27),
           child: Center(
             child: isLoading
                 ? SizedBox(
@@ -617,24 +749,28 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Widget _buildLoginLink() {
-    return RichText(
-      text: TextSpan(
-        style: const TextStyle(fontSize: 16, color: Color(0xFF000000)),
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const TextSpan(text: 'Already have an account? '),
-          WidgetSpan(
-            child: GestureDetector(
-              onTap: () => Navigator.of(context).pushReplacement(
-                SlideFadePageRoute(page: const LoginPage())
-              ), 
-              child: const Text(
-                'Login',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Color(0xFF1B384A),
-                  fontWeight: FontWeight.w500,
-                  decoration: TextDecoration.underline,
-                ),
+          Text(
+            'Already have an account? ',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey.shade700,
+            ),
+          ),
+          GestureDetector(
+            onTap: () => Navigator.of(context).pushReplacement(
+              SlideFadePageRoute(page: const LoginPage())
+            ), 
+            child: const Text(
+              'Sign In',
+              style: TextStyle(
+                fontSize: 16,
+                color: Color(0xFF326789),
+                fontWeight: FontWeight.bold,
               ),
             ),
           ),
@@ -675,12 +811,15 @@ class SlideFadePageRoute extends PageRouteBuilder {
             position: Tween<Offset>(
               begin: const Offset(1.0, 0.0),
               end: Offset.zero,
-            ).animate(animation),
+            ).animate(CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutQuart,
+            )),
             child: FadeTransition(
               opacity: animation,
               child: child,
             ),
           ),
-          transitionDuration: const Duration(milliseconds: 300),
+          transitionDuration: const Duration(milliseconds: 400),
         );
 }

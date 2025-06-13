@@ -119,10 +119,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return Scaffold(
       backgroundColor: Color(0xFFF8FAFC),
       body: SafeArea(
-        // Berganti konten berdasarkan _bottomNavIndex
-        child: _bottomNavIndex == 4 ? _buildProfileContent() : _buildHomeContent(),
+        // The content now dynamically changes based on _bottomNavIndex
+        // For index 4, it shows the ProfileScreen content directly.
+        child: IndexedStack(
+          index: _bottomNavIndex == 4 ? 1 : 0,
+          children: [
+            _buildHomeContent(),
+            // Pass fromHomeScreen:true so it knows to build without a Scaffold
+            ProfileScreen(fromHomeScreen: true),
+          ],
+        ),
       ),
-      bottomNavigationBar: _buildFixedBottomNavigationBar(),
+      bottomNavigationBar: _buildBottomNavigationBar(),
     );
   }
 
@@ -498,9 +506,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     String? orgAvatarUrl;
     if (organization != null) {
       final orgAvatarFilename = organization.data['avatar'];
-       if (orgAvatarFilename != null && orgAvatarFilename.isNotEmpty) {
+        if (orgAvatarFilename != null && orgAvatarFilename.isNotEmpty) {
           orgAvatarUrl = _pbService.getFileUrl(organization, orgAvatarFilename);
-       }
+        }
     }
 
     return TweenAnimationBuilder<double>(
@@ -696,20 +704,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildProfileContent() {
-    // Navigasi ke ProfileScreen yang sebenarnya
-    return ProfileScreen();
-  }
+  // --- START: UNIFIED BOTTOM NAVIGATION BAR ---
 
-  //-- KODE YANG DIPERBAIKI ADA DI BAWAH INI --//
-
-  Widget _buildFixedBottomNavigationBar() {
+  Widget _buildBottomNavigationBar() {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05), // Sedikit mengurangi bayangan
+            color: Colors.black.withOpacity(0.05),
             blurRadius: 20,
             offset: Offset(0, -5),
           ),
@@ -717,12 +720,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       ),
       child: SafeArea(
         child: Padding(
-          // Menyesuaikan padding agar lebih seimbang dan tidak memakan banyak ruang vertikal
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround, // Memberi ruang yang lebih baik
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              // Perhatikan bagaimana status 'isActive' sekarang dinamis
               _buildCompactNavItem(Icons.home_rounded, 'Home', 0),
               _buildCompactNavItem(Icons.search_rounded, 'Search', 1),
               _buildCompactNavItem(Icons.emoji_events_rounded, 'Rewards', 2),
@@ -736,59 +737,60 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
   
   Widget _buildCompactNavItem(IconData icon, String label, int index) {
-    // Menentukan apakah item ini sedang aktif berdasarkan state _bottomNavIndex
     final bool isActive = _bottomNavIndex == index;
-  
+    final Color activeColor = Color(0xFF6366F1);
+    final Color inactiveColor = Color(0xFF9CA3AF);
+
     return Flexible(
       child: GestureDetector(
         onTap: () {
-          // Logika navigasi utama
-          // Jika Anda ingin mengganti konten body di HomeScreen, gunakan setState.
-          // Jika Anda ingin membuka halaman baru di atasnya, gunakan Navigator.push.
-  
-          if (index == 0 || index == 4) { // Jika tab Home atau Profile ditekan
+          // If tapping the current active tab, do nothing
+          if (isActive) return;
+
+          // For Home and Profile, just switch the view within this screen
+          if (index == 0 || index == 4) {
             setState(() {
               _bottomNavIndex = index;
             });
-            return; // Hentikan eksekusi agar tidak menjalankan Navigator.push
-          }
-          
-          // Logika navigasi yang sudah ada untuk halaman lain
-          if (_bottomNavIndex == index) return; // Jangan lakukan apa pun jika tab yang sama ditekan
-  
-          switch (index) {
-            case 1:
-              Navigator.push(context, MaterialPageRoute(builder: (context) => SearchScreen()));
-              break;
-            case 2:
-              Navigator.push(context, MaterialPageRoute(builder: (context) => GamificationScreen()));
-              break;
-            case 3:
-              Navigator.push(context, MaterialPageRoute(builder: (context) => VolunteerHoursScreen()));
-              break;
+          } else {
+            // For other tabs, push a new screen on top of HomeScreen
+            Widget page;
+            switch (index) {
+              case 1:
+                page = SearchScreen();
+                break;
+              case 2:
+                page = GamificationScreen();
+                break;
+              case 3:
+                page = VolunteerHoursScreen();
+                break;
+              default:
+                return;
+            }
+            Navigator.push(context, MaterialPageRoute(builder: (context) => page));
           }
         },
         child: Container(
-          // Memberi sedikit padding agar lebih mudah ditekan
           padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
-            color: isActive ? Color(0xFF6366F1).withOpacity(0.1) : Colors.transparent,
+            color: isActive ? activeColor.withOpacity(0.1) : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Column(
-            mainAxisSize: MainAxisSize.min, // Penting agar column tidak memakan banyak ruang
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 icon,
-                color: isActive ? Color(0xFF6366F1) : Color(0xFF9CA3AF),
-                size: 24, // Sedikit memperbesar ikon agar seimbang
+                color: isActive ? activeColor : inactiveColor,
+                size: 24,
               ),
-              SizedBox(height: 4), // Memberi sedikit jarak
+              SizedBox(height: 4),
               Text(
                 label,
                 style: TextStyle(
-                  color: isActive ? Color(0xFF6366F1) : Color(0xFF9CA3AF),
-                  fontSize: 11, // Sedikit memperbesar font agar mudah dibaca
+                  color: isActive ? activeColor : inactiveColor,
+                  fontSize: 11,
                   fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
                 ),
                 overflow: TextOverflow.ellipsis,
@@ -800,4 +802,5 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       ),
     );
   }
+  // --- END: UNIFIED BOTTOM NAVIGATION BAR ---
 }

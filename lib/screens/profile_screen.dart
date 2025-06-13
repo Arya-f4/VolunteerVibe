@@ -4,15 +4,22 @@ import 'package:flutter/material.dart';
 import 'package:pocketbase/pocketbase.dart';
 import 'package:volunteervibe/services/pocketbase_service.dart';
 
-import 'home_screen.dart';
+import 'home_screen.dart'; // Keep this import for context, though less critical now
 import 'search_screen.dart';
 import 'gamification_screen.dart';
 import 'volunteer_hours_screen.dart';
 import 'organization_register_screen.dart';
 import '../auth/login_page.dart';
-import 'edit_profile_screen.dart'; // Import the new screen
+import 'edit_profile_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
+  final bool fromHomeScreen; // New parameter to indicate if called from HomeScreen
+
+  const ProfileScreen({
+    Key? key,
+    this.fromHomeScreen = false, // Default to false
+  }) : super(key: key);
+
   @override
   _ProfileScreenState createState() => _ProfileScreenState();
 }
@@ -21,8 +28,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // Service
   final PocketBaseService _pbService = PocketBaseService();
 
-  // --- State untuk Bottom Bar ---
-  int _bottomNavIndex = 4; // 4 adalah index untuk "Profile"
+  // --- State untuk Bottom Bar (Hanya jika bukan dari HomeScreen) ---
+  // Kita tidak perlu _bottomNavIndex di ProfileScreen jika dipanggil dari HomeScreen
+  // karena HomeScreen yang akan mengelola BottomNavigationBar.
 
   // State
   bool _isLoading = true;
@@ -46,6 +54,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _loadProfileData() async {
+    print('ProfileScreen: _loadProfileData called. Setting _isLoading to true.');
     setState(() => _isLoading = true);
     final userRecord = _pbService.getCurrentUser();
     if (userRecord != null) {
@@ -55,16 +64,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final avatarFilename = userRecord.getStringValue('avatar');
       if (avatarFilename.isNotEmpty) {
         _userAvatarUrl = _pbService.getFileUrl(userRecord, avatarFilename);
+      } else {
+        _userAvatarUrl = null;
       }
       _eventsJoined = await _pbService.getEventsJoinedCount(userRecord.id);
+
+      print('ProfileScreen: Data loaded - User Name: $_userName');
+      print('ProfileScreen: Data loaded - User Email: $_userEmail');
+      print('ProfileScreen: Data loaded - User Avatar URL: $_userAvatarUrl');
+      print('ProfileScreen: Data loaded - User Points: $_userPoints');
+      print('ProfileScreen: Data loaded - Events Joined: $_eventsJoined');
+
+    } else {
+      print('ProfileScreen: No user record found in _loadProfileData. Resetting to guest defaults.');
+      _userName = 'Guest';
+      _userEmail = '...';
+      _userAvatarUrl = null;
+      _userPoints = 0;
+      _eventsJoined = 0;
     }
     if (mounted) {
+      print('ProfileScreen: Setting _isLoading to false and refreshing UI.');
       setState(() => _isLoading = false);
+    } else {
+      print('ProfileScreen: Widget is not mounted, skipping setState.');
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // If fromHomeScreen is true, we don't need a separate Scaffold with its own AppBar/BottomNavigationBar.
+    // The HomeScreen's Scaffold will handle that.
+    if (widget.fromHomeScreen) {
+      return _buildProfileContentBody();
+    }
+
+    // Otherwise, if this ProfileScreen is opened directly, provide its own Scaffold.
     return Scaffold(
       backgroundColor: Color(0xFFF8FAFC),
       appBar: AppBar(
@@ -77,29 +112,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: RefreshIndicator(
           onRefresh: _loadProfileData,
           color: Color(0xFF6C63FF),
-          child: CustomScrollView(
-            slivers: [
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.all(24.0),
-                  child: Column(
-                    children: [
-                      _buildProfileHeader(),
-                      SizedBox(height: 32),
-                      _buildStatsSection(),
-                      SizedBox(height: 32),
-                      _buildAchievementsSection(),
-                      SizedBox(height: 32),
-                      _buildOptions(context)
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
+          child: _buildProfileContentBody(),
         ),
       ),
-      bottomNavigationBar: _buildBottomNavigationBar(),
+      // bottomNavigationBar: _buildBottomNavigationBar(), // Remove or modify if ProfileScreen is only ever shown as a tab.
+      // If it's *ever* opened as a standalone page that *should* have a bottom bar,
+      // you'd need to decide if it manages its own bottom bar or pushes back to a screen with one.
+      // For this fix, we assume the HomeScreen manages the primary bottom bar.
+    );
+  }
+
+  // Extracted the main content of ProfileScreen into a separate method
+  Widget _buildProfileContentBody() {
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.all(24.0),
+            child: Column(
+              children: [
+                _buildProfileHeader(),
+                SizedBox(height: 32),
+                _buildStatsSection(),
+                SizedBox(height: 32),
+                _buildAchievementsSection(),
+                SizedBox(height: 32),
+                _buildOptions(context)
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -258,7 +301,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         } else if (title == 'Register as Organization') {
           Navigator.push(context, MaterialPageRoute(builder: (context) => OrganizationRegisterScreen()));
         } else if (title == 'Edit Profile') {
-          // Navigate to EditProfileScreen and await for a result
+          print('ProfileScreen: Navigating to EditProfileScreen with name: $_userName, email: $_userEmail, avatar URL: $_userAvatarUrl');
           final bool? profileUpdated = await Navigator.push(
             context,
             MaterialPageRoute(
@@ -268,18 +311,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
           );
-          // If profileUpdated is true, reload profile data
           if (profileUpdated == true) {
+            print('ProfileScreen: EditProfileScreen returned true, reloading profile data.');
             _loadProfileData();
+          } else {
+            print('ProfileScreen: EditProfileScreen returned null or false, not reloading profile data.');
           }
         }
       },
     );
   }
 
-  // --- START: KODE BOTTOM BAR YANG DIPERBARUI ---
-
+  // --- START: KODE BOTTOM BAR YANG DIPERBARUI (Jika ProfileScreen standalone) ---
+  // Bug fix: This BottomNavigationBar should ONLY be used if ProfileScreen is not
+  // loaded as a child of HomeScreen. If fromHomeScreen is true, HomeScreen handles the bottom bar.
   Widget _buildBottomNavigationBar() {
+    // This section is kept for completeness if ProfileScreen might be opened standalone
+    // and needs its own bottom nav. However, in the current setup with HomeScreen managing
+    // the main tabs, this might not be needed or should be conditionally shown.
+    // If it's always shown as a tab, you can remove this method entirely.
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -297,40 +347,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildCompactNavItem(Icons.home_rounded, 'Home', 0),
-              _buildCompactNavItem(Icons.search_rounded, 'Search', 1),
-              _buildCompactNavItem(Icons.emoji_events_rounded, 'Rewards', 2),
-              _buildCompactNavItem(Icons.schedule_rounded, 'Hours', 3),
-              _buildCompactNavItem(Icons.person_rounded, 'Profile', 4),
+              // Notice how 'isActive' status is now dynamic
+              // We mimic the HomeScreen's bottom nav logic here for consistency if needed.
+              _buildCompactNavItemForProfile(Icons.home_rounded, 'Home', 0),
+              _buildCompactNavItemForProfile(Icons.search_rounded, 'Search', 1),
+              _buildCompactNavItemForProfile(Icons.emoji_events_rounded, 'Rewards', 2),
+              _buildCompactNavItemForProfile(Icons.schedule_rounded, 'Hours', 3),
+              _buildCompactNavItemForProfile(Icons.person_rounded, 'Profile', 4),
             ],
           ),
         ),
       ),
     );
   }
+  
+  // A helper method for ProfileScreen's internal bottom nav if it exists,
+  // to avoid confusion with HomeScreen's _buildCompactNavItem.
+  Widget _buildCompactNavItemForProfile(IconData icon, String label, int index) {
+    // We assume if this is called, it's from a standalone ProfileScreen
+    // and its _bottomNavIndex would be 4.
+    final bool isActive = (index == 4); // Profile is always active here
 
-  Widget _buildCompactNavItem(IconData icon, String label, int index) {
     final activeColor = Color(0xFF6C63FF);
     final inactiveColor = Color(0xFF718096);
-    final bool isActive = _bottomNavIndex == index;
 
     return Flexible(
       child: GestureDetector(
         onTap: () {
-          if (index == _bottomNavIndex) return;
+          // If already on Profile, do nothing
+          if (index == 4) return;
 
-          // Menggunakan logika navigasi yang sudah ada sebelumnya
+          // If navigating to home from a standalone ProfileScreen
           if (index == 0) {
-            // Kembali ke home screen. Jika ProfileScreen adalah bagian dari tumpukan
-            // HomeScreen, maka pop() sudah cukup. Jika tidak, gunakan popUntil.
-            // Di sini kita asumsikan ProfileScreen dibuka dari HomeScreen.
-            Navigator.pop(context); 
-          } else {
-              switch (index) {
-                case 1: Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => SearchScreen())); break;
-                case 2: Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => GamificationScreen())); break;
-                case 3: Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => VolunteerHoursScreen())); break;
-              }
+            Navigator.pop(context); // Go back to HomeScreen
+            return;
+          }
+
+          // For other tabs, navigate normally
+          switch (index) {
+            case 1: Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => SearchScreen())); break;
+            case 2: Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => GamificationScreen())); break;
+            case 3: Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => VolunteerHoursScreen())); break;
           }
         },
         child: Container(

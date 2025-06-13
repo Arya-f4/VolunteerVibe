@@ -1,3 +1,5 @@
+// File: lib/screens/search_screen.dart
+
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:intl/intl.dart';
@@ -9,13 +11,12 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart';
 import 'package:flutter_map_location_marker/flutter_map_location_marker.dart';
-import 'package:volunteervibe/screens/profile_screen.dart';
+import 'package:volunteervibe/screens/profile_screen.dart'; // Import ProfileScreen
 
 // Import untuk halaman lain di bottom bar
 import 'event_detail_screen.dart';
 import 'gamification_screen.dart';
 import 'volunteer_hours_screen.dart';
-// import 'profile_screen.dart'; // Pastikan Anda memiliki ProfileScreen
 
 class SearchScreen extends StatefulWidget {
   @override
@@ -122,7 +123,7 @@ class _SearchScreenState extends State<SearchScreen> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: SafeArea(
+      body: SafeArea( // Keep this SafeArea for the body content
         child: Column(
           children: [
             _buildSearchHeader(),
@@ -143,7 +144,7 @@ class _SearchScreenState extends State<SearchScreen> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withOpacity(0.05), // Sedikit mengurangi bayangan
             blurRadius: 20,
             offset: Offset(0, -5),
           ),
@@ -151,10 +152,12 @@ class _SearchScreenState extends State<SearchScreen> {
       ),
       child: SafeArea(
         child: Padding(
+          // Menyesuaikan padding agar lebih seimbang dan tidak memakan banyak ruang vertikal
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            mainAxisAlignment: MainAxisAlignment.spaceAround, // Memberi ruang yang lebih baik
             children: [
+              // Perhatikan bagaimana status 'isActive' sekarang dinamis
               _buildCompactNavItem(Icons.home_rounded, 'Home', 0),
               _buildCompactNavItem(Icons.search_rounded, 'Search', 1),
               _buildCompactNavItem(Icons.emoji_events_rounded, 'Rewards', 2),
@@ -180,11 +183,10 @@ class _SearchScreenState extends State<SearchScreen> {
 
           switch (index) {
             case 0:
-              // Kembali ke HomeScreen
               Navigator.pop(context);
               break;
             case 1:
-              // Sudah di halaman ini
+              // Sudah di halaman ini, tidak perlu navigasi
               break;
             case 2:
               Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => GamificationScreen()));
@@ -192,8 +194,7 @@ class _SearchScreenState extends State<SearchScreen> {
             case 3:
               Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => VolunteerHoursScreen()));
               break;
-            case 4:
-              // Ganti dengan halaman Profile Anda
+             case 4:
               Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => ProfileScreen()));
               break;
           }
@@ -231,7 +232,6 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   // --- END: KODE BOTTOM BAR YANG DIPERBARUI ---
-
 
   List<Marker> _buildMarkers(List<RecordModel> events) {
     return events.map((event) {
@@ -362,7 +362,8 @@ class _SearchScreenState extends State<SearchScreen> {
                                   setState(() => _routePoints = route);
                                   modalState(() => _isRouteLoading = false);
                                 }
-                                if (navigator.canPop()) navigator.pop();
+                                // It's generally better to pop after route is shown, not just when map is available
+                                // if (navigator.canPop()) navigator.pop(); // Only pop if route is successfully displayed on map
                               }
                             }
                           },
@@ -379,7 +380,7 @@ class _SearchScreenState extends State<SearchScreen> {
                         child: ElevatedButton(
                           child: Text("View Details"),
                           onPressed: () {
-                            Navigator.pop(modalContext);
+                            Navigator.pop(modalContext); // Pop the bottom sheet first
                             Navigator.push(context, MaterialPageRoute(builder: (context) => EventDetailScreen(event: event)));
                           },
                           style: ElevatedButton.styleFrom(

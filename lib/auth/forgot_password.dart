@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:pocketbase/pocketbase.dart'; // Diperlukan untuk ClientException
-import '../pocketbase_client.dart'; // Sesuaikan path jika perlu (tempat variabel 'pb' Anda berada)
+import 'package:pocketbase/pocketbase.dart';
+import '../pocketbase_client.dart';
 
 class ForgotPassword extends StatefulWidget {
   const ForgotPassword({super.key});
@@ -9,49 +9,49 @@ class ForgotPassword extends StatefulWidget {
   _ForgotPasswordPageState createState() => _ForgotPasswordPageState();
 }
 
-class _ForgotPasswordPageState extends State<ForgotPassword> {
+class _ForgotPasswordPageState extends State<ForgotPassword> with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   bool _isLoading = false;
   String? _errorMessage;
+  bool _isOrganization = false;
+  
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
 
-  // [BARU] State untuk menyimpan tipe akun yang dipilih
-  bool _isOrganization = false; 
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeIn),
+    );
+    _animationController.forward();
+  }
 
   @override
   void dispose() {
     _emailController.dispose();
+    _animationController.dispose();
     super.dispose();
   }
 
-  // [DIMODIFIKASI] Fungsi ini sekarang menangani kedua tipe akun
   Future<void> _handleSendResetLink() async {
+    if (!_formKey.currentState!.validate()) return;
+    
     final email = _emailController.text.trim();
-
-    // Validasi email
-    if (email.isEmpty) {
-      setState(() {
-        _errorMessage = 'Please enter your email';
-      });
-      return;
-    }
-    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email)) {
-      setState(() {
-        _errorMessage = 'Please enter a valid email address';
-      });
-      return;
-    }
 
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
     
-    // [BARU] Tentukan koleksi berdasarkan pilihan pengguna
     final collectionName = _isOrganization ? 'organization' : 'users';
 
     try {
-      // [DIMODIFIKASI] Panggil PocketBase pada koleksi yang benar
       await pb.collection(collectionName).requestPasswordReset(email);
 
       if (!mounted) return;
@@ -66,7 +66,6 @@ class _ForgotPasswordPageState extends State<ForgotPassword> {
       String specificMessage = 'Failed to send reset link.';
       
       if (e.statusCode == 404) {
-        // [BARU] Pesan error yang lebih spesifik
         final accountType = _isOrganization ? 'Organization' : 'User';
         specificMessage = '$accountType with this email not found.';
       } else if (e.response.containsKey('message') && e.response['message'].toString().isNotEmpty) {
@@ -102,39 +101,40 @@ class _ForgotPasswordPageState extends State<ForgotPassword> {
       builder: (BuildContext context) {
         return AlertDialog(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
           ),
+          contentPadding: const EdgeInsets.all(24),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 80,
-                height: 80,
+                width: 90,
+                height: 90,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF3AB3F).withOpacity(0.1),
+                  color: const Color(0xFFF3AB3F).withOpacity(0.15),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
                   Icons.email_outlined,
                   color: Color(0xFFF3AB3F),
-                  size: 40,
+                  size: 45,
                 ),
               ),
               const SizedBox(height: 24),
               const Text(
                 'Check Your Email',
                 style: TextStyle(
-                  fontSize: 20,
+                  fontSize: 22,
                   fontWeight: FontWeight.bold,
                   color: Color(0xFF1B384A),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
               Text(
                 'We have sent a password reset link to\n${_emailController.text.trim()}',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontSize: 14,
+                  fontSize: 16,
                   color: Color(0xFF828282),
                   height: 1.5,
                 ),
@@ -142,26 +142,27 @@ class _ForgotPasswordPageState extends State<ForgotPassword> {
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
-                height: 48,
+                height: 50,
                 child: ElevatedButton(
                   onPressed: () {
-                    Navigator.of(context).pop(); // Tutup dialog
+                    Navigator.of(context).pop(); // Close dialog
                     if (Navigator.canPop(context)) {
-                      Navigator.of(context).pop(); // Kembali ke halaman sebelumnya
+                      Navigator.of(context).pop(); // Go back to previous page
                     }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFF3AB3F),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(15),
                     ),
-                    elevation: 0,
+                    elevation: 2,
+                    shadowColor: const Color(0xFFF3AB3F).withOpacity(0.3),
                   ),
                   child: const Text(
                     'Back to Login',
                     style: TextStyle(
                       fontSize: 16,
-                      fontWeight: FontWeight.w500,
+                      fontWeight: FontWeight.w600,
                       color: Colors.white,
                     ),
                   ),
@@ -178,27 +179,36 @@ class _ForgotPasswordPageState extends State<ForgotPassword> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFFFFFFF),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            _buildTopSection(),
-            _buildBottomSection(),
-          ],
+      body: SafeArea(
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                _buildTopSection(),
+                _buildBottomSection(),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 
   Widget _buildTopSection() {
-    // ... (Kode _buildTopSection Anda tidak berubah)
     return SizedBox(
-      height: MediaQuery.of(context).size.height * 0.6,
+      height: MediaQuery.of(context).size.height * 0.5,
       child: Stack(
         children: [
           Container(
-            height: MediaQuery.of(context).size.height * 0.55,
+            height: MediaQuery.of(context).size.height * 0.45,
             decoration: const BoxDecoration(
-              color: Color(0xFF1B384A),
+              // Updated gradient to match the login page exactly
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFF1A2E3B), Color(0xFF2B5876)],
+              ),
               borderRadius: BorderRadius.only(
                 bottomLeft: Radius.circular(50),
                 bottomRight: Radius.circular(50),
@@ -214,8 +224,8 @@ class _ForgotPasswordPageState extends State<ForgotPassword> {
                       Navigator.pop(context);
                     },
                     child: Container(
-                      width: 40,
-                      height: 40,
+                      width: 42,
+                      height: 42,
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(12),
@@ -229,7 +239,39 @@ class _ForgotPasswordPageState extends State<ForgotPassword> {
                   ),
                 ),
                 Positioned(
-                  bottom: 80,
+                  top: MediaQuery.of(context).padding.top + 80,
+                  left: 0,
+                  right: 0,
+                  child: const Center(
+                    child: Text(
+                      'Reset Password',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            offset: Offset(0, 2),
+                            blurRadius: 4,
+                            color: Color(0x40000000),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                // Add a horizontal line similar to the login page
+                Positioned(
+                  bottom: 100,
+                  left: 40,
+                  right: 40,
+                  child: Container(
+                    height: 1,
+                    color: Colors.white.withOpacity(0.3),
+                  ),
+                ),
+                Positioned(
+                  bottom: 70,
                   left: 50,
                   right: 50,
                   child: CustomPaint(
@@ -246,16 +288,17 @@ class _ForgotPasswordPageState extends State<ForgotPassword> {
             right: 0,
             child: Center(
               child: Container(
-                width: 120,
-                height: 120,
+                width: 110,
+                height: 110,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 10,
+                      color: Colors.black.withOpacity(0.15),
+                      blurRadius: 15,
                       offset: const Offset(0, 5),
+                      spreadRadius: 2,
                     ),
                   ],
                 ),
@@ -274,7 +317,6 @@ class _ForgotPasswordPageState extends State<ForgotPassword> {
   }
 
   Widget _buildLogo() {
-    // ... (Kode _buildLogo Anda tidak berubah)
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       mainAxisSize: MainAxisSize.min,
@@ -358,12 +400,11 @@ class _ForgotPasswordPageState extends State<ForgotPassword> {
   }
 
   Widget _buildBottomSection() {
-    // ... (Kode _buildBottomSection Anda tidak berubah)
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24.0),
       child: Column(
         children: [
-          const SizedBox(height: 32),
+          const SizedBox(height: 30),
           const Align(
             alignment: Alignment.centerLeft,
             child: Column(
@@ -372,7 +413,7 @@ class _ForgotPasswordPageState extends State<ForgotPassword> {
                 Text(
                   'FORGOT',
                   style: TextStyle(
-                    fontSize: 32,
+                    fontSize: 28,
                     fontWeight: FontWeight.bold,
                     color: Color(0xFF1B384A),
                   ),
@@ -380,7 +421,7 @@ class _ForgotPasswordPageState extends State<ForgotPassword> {
                 Text(
                   'PASSWORD?',
                   style: TextStyle(
-                    fontSize: 32,
+                    fontSize: 28,
                     fontWeight: FontWeight.bold,
                     color: Color(0xFF1B384A),
                   ),
@@ -400,44 +441,63 @@ class _ForgotPasswordPageState extends State<ForgotPassword> {
               ),
             ),
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 24),
           _buildForm(),
           const SizedBox(height: 20),
           _buildSendButton(),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
           _buildBackToLogin(),
-          const SizedBox(height: 32),
+          const SizedBox(height: 24),
         ],
       ),
     );
   }
 
-  // [DIMODIFIKASI] Form sekarang berisi pilihan tipe akun
   Widget _buildForm() {
     return Form(
       key: _formKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // [BARU] Widget untuk memilih tipe akun
           _buildAccountTypeSwitcher(),
           const SizedBox(height: 16),
           _buildTextField(
             controller: _emailController,
             hintText: 'Enter your email',
             keyboardType: TextInputType.emailAddress,
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Please enter your email';
+              }
+              if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+                return 'Please enter a valid email address';
+              }
+              return null;
+            },
           ),
           if (_errorMessage != null) ...[
             const SizedBox(height: 8),
             Padding(
               padding: const EdgeInsets.only(left: 4),
-              child: Text(
-                _errorMessage!,
-                style: const TextStyle(
-                  color: Color(0xFFEB4335),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w400,
-                ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    color: Color(0xFFEB4335),
+                    size: 16,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      _errorMessage!,
+                      style: const TextStyle(
+                        color: Color(0xFFEB4335),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -446,37 +506,81 @@ class _ForgotPasswordPageState extends State<ForgotPassword> {
     );
   }
 
-  // [BARU] Widget untuk tombol pilihan User/Organization
   Widget _buildAccountTypeSwitcher() {
-    return Center(
-      child: Column(
+    return Container(
+      height: 56,
+      decoration: BoxDecoration(
+        color: const Color(0xFFE9EEF2),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Stack(
         children: [
-          const Text(
-            'I am a...',
-            style: TextStyle(
-              fontSize: 16,
-              color: Color(0xFF828282),
+          AnimatedAlign(
+            alignment: _isOrganization ? Alignment.centerRight : Alignment.centerLeft,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+            child: Container(
+              width: (MediaQuery.of(context).size.width - 48 - 4) / 2, 
+              height: 48,
+              margin: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1B384A),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF1B384A).withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  )
+                ]
+              ),
             ),
           ),
-          const SizedBox(height: 8),
-          ToggleButtons(
-            isSelected: [!_isOrganization, _isOrganization],
-            onPressed: (index) {
-              setState(() {
-                _isOrganization = (index == 1);
-              });
-            },
-            borderRadius: BorderRadius.circular(12),
-            fillColor: const Color(0xFF1B384A),
-            selectedColor: Colors.white,
-            color: const Color(0xFF1B384A),
-            constraints: BoxConstraints(
-              minHeight: 40.0,
-              minWidth: (MediaQuery.of(context).size.width - 48 - 12) / 2,
-            ),
-            children: const [
-              Text('User'),
-              Text('Organization'),
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _isOrganization = false),
+                  child: Container(
+                    color: Colors.transparent, 
+                    child: Center(
+                      child: Text(
+                        'User',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: !_isOrganization ? Colors.white : Colors.black54,
+                          fontSize: 16
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _isOrganization = true),
+                  child: Container(
+                    color: Colors.transparent,
+                    child: Center(
+                      child: Text(
+                        'Organization',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: _isOrganization ? Colors.white : Colors.black54,
+                          fontSize: 16
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ],
@@ -484,18 +588,24 @@ class _ForgotPasswordPageState extends State<ForgotPassword> {
     );
   }
 
-
   Widget _buildTextField({
     required TextEditingController controller,
     required String hintText,
     TextInputType? keyboardType,
+    String? Function(String?)? validator,
   }) {
-    // ... (Kode _buildTextField Anda tidak berubah)
     return Container(
-      height: 56,
+      height: 60,
       decoration: BoxDecoration(
         color: const Color(0xFFE9EEF2),
         borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
         border: _errorMessage != null
             ? Border.all(color: const Color(0xFFEB4335).withOpacity(0.3), width: 1)
             : null,
@@ -503,6 +613,7 @@ class _ForgotPasswordPageState extends State<ForgotPassword> {
       child: TextFormField(
         controller: controller,
         keyboardType: keyboardType,
+        validator: validator,
         onChanged: (value) {
           if (_errorMessage != null) {
             setState(() {
@@ -521,7 +632,7 @@ class _ForgotPasswordPageState extends State<ForgotPassword> {
             fontSize: 16,
           ),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
           prefixIcon: const Icon(
             Icons.email_outlined,
             color: Color(0xFF828282),
@@ -532,7 +643,6 @@ class _ForgotPasswordPageState extends State<ForgotPassword> {
   }
 
   Widget _buildSendButton() {
-    // ... (Kode _buildSendButton Anda tidak berubah, _handleSendResetLink sudah diupdate)
     return SizedBox(
       width: double.infinity,
       height: 56,
@@ -543,7 +653,8 @@ class _ForgotPasswordPageState extends State<ForgotPassword> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          elevation: 0,
+          elevation: 2,
+          shadowColor: const Color(0xFFF3AB3F).withOpacity(0.5),
         ),
         child: _isLoading
             ? const SizedBox(
@@ -551,14 +662,14 @@ class _ForgotPasswordPageState extends State<ForgotPassword> {
                 height: 24,
                 child: CircularProgressIndicator(
                   color: Colors.white,
-                  strokeWidth: 2,
+                  strokeWidth: 2.5,
                 ),
               )
             : const Text(
                 'Send Reset Link',
                 style: TextStyle(
                   fontSize: 18,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
                   color: Colors.white,
                 ),
               ),
@@ -567,55 +678,51 @@ class _ForgotPasswordPageState extends State<ForgotPassword> {
   }
 
   Widget _buildBackToLogin() {
-    // ... (Kode _buildBackToLogin Anda tidak berubah)
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const Icon(
+    return Align(
+      alignment: Alignment.center,
+      child: TextButton.icon(
+        onPressed: () {
+          Navigator.pop(context);
+        },
+        icon: const Icon(
           Icons.arrow_back_ios,
           color: Color(0xFF326789),
           size: 16,
         ),
-        const SizedBox(width: 4),
-        GestureDetector(
-          onTap: () {
-            Navigator.pop(context);
-          },
-          child: const Text(
-            'Back to Login',
-            style: TextStyle(
-              fontSize: 16,
-              color: Color(0xFF326789),
-              fontWeight: FontWeight.w500,
-              decoration: TextDecoration.underline,
-            ),
+        label: const Text(
+          'Back to Login',
+          style: TextStyle(
+            fontSize: 16,
+            color: Color(0xFF326789),
+            fontWeight: FontWeight.w500,
           ),
         ),
-      ],
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        ),
+      ),
     );
   }
 }
 
 class CurvedLinesPainter extends CustomPainter {
-  // ... (Kode CurvedLinesPainter Anda tidak berubah)
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFF326789).withOpacity(0.3)
+      ..color = Colors.white.withOpacity(0.2)
       ..strokeWidth = 2
       ..style = PaintingStyle.stroke;
 
-    final path = Path();
-
-    path.moveTo(0, size.height * 0.5);
-    path.quadraticBezierTo(
-        size.width * 0.5, size.height * 0.2, size.width, size.height * 0.5);
-
-    path.moveTo(0, size.height * 0.7);
-    path.quadraticBezierTo(
-        size.width * 0.5, size.height * 0.4, size.width, size.height * 0.7);
-
-    canvas.drawPath(path, paint);
+    final path1 = Path();
+    path1.moveTo(0, size.height * 0.5);
+    path1.quadraticBezierTo(size.width * 0.5, size.height * 0.2, size.width, size.height * 0.5);
+    
+    final path2 = Path();
+    path2.moveTo(0, size.height * 0.7);
+    path2.quadraticBezierTo(size.width * 0.5, size.height * 0.4, size.width, size.height * 0.7);
+    
+    canvas.drawPath(path1, paint);
+    canvas.drawPath(path2, paint);
   }
 
   @override
