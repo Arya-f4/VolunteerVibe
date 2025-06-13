@@ -1,0 +1,2 @@
+C:/PROJECT_GITHUB/VolunteerVibe/android/app/.cxx/Debug/6e2z3s2s/armeabi-v7a/CMakeFiles/edit_cache.dir
+C:/PROJECT_GITHUB/VolunteerVibe/android/app/.cxx/Debug/6e2z3s2s/armeabi-v7a/CMakeFiles/rebuild_cache.dir

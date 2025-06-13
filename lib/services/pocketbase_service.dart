@@ -1,5 +1,3 @@
-// File: lib/services/pocketbase_service.dart
-
 import 'dart:io'; 
 import 'package:pocketbase/pocketbase.dart';
 import 'package:volunteervibe/pocketbase_client.dart';
@@ -17,20 +15,17 @@ class PocketBaseService {
       return null;
     }
     final url = pb.getFileUrl(record, filename).toString();
-    // print('PocketBaseService: Generated file URL: $url for record ID: ${record.id}'); // Bisa sangat berisik
     return url;
   }
 
   Future<RecordModel?> getMyOrganization() async {
     final user = getCurrentUser();
-    // Cek jika user yang login adalah dari koleksi 'organization'
     if (user != null && user.collectionName == 'organization') {
       print('PocketBaseService: Current user is an organization.');
       return user;
     }
-    // Jika dari koleksi 'users', coba cari relasinya (logika lama, bisa disesuaikan)
     if (user != null && user.collectionName == 'users' && user.getStringValue('organization_id').isNotEmpty) {
-        try {
+      try {
         print('PocketBaseService: Fetching organization from user relation...');
         final userWithOrg = await pb.collection('users').getOne(user.id, expand: 'organization_id');
         final organization = userWithOrg.expand['organization_id']?.first;
@@ -107,7 +102,6 @@ class PocketBaseService {
         filter: filterString,
         expand: 'organization_id,categories_id',
       );
-      print('PocketBaseService: Fetched ${result.length} events.');
       return result;
     } catch (e) {
       print('Error fetching events: $e');
@@ -133,7 +127,7 @@ class PocketBaseService {
   RecordModel? getCurrentUser() {
     final currentUser = pb.authStore.model;
     if (currentUser != null) {
-      print('PocketBaseService: getCurrentUser - User ID: ${currentUser.id}, Name: ${currentUser.getStringValue('name')}, Avatar: ${currentUser.getStringValue('avatar')}');
+      print('PocketBaseService: getCurrentUser - User ID: ${currentUser.id}, Name: ${currentUser.getStringValue('name')}, Email: ${currentUser.getStringValue('email')}, Avatar: ${currentUser.getStringValue('avatar')}');
     } else {
       print('PocketBaseService: getCurrentUser - No user authenticated.');
     }
@@ -154,8 +148,7 @@ class PocketBaseService {
     }
   }
 
-  // New method to update user profile
-  Future<void> updateUserProfile({String? name, File? avatarFile}) async {
+  Future<void> updateUserProfile({String? name, String? email, File? avatarFile}) async {
     final currentUser = pb.authStore.model;
     if (currentUser == null) {
       throw Exception("No authenticated user found.");
@@ -166,24 +159,141 @@ class PocketBaseService {
       body['name'] = name;
       print('PocketBaseService: Attempting to update name to: $name');
     }
+    if (email != null) {
+      body['email'] = email;
+      print('PocketBaseService: Attempting to update email to: $email');
+    }
 
-    List<http.MultipartFile> files = []; // Changed to http.MultipartFile
+    List<http.MultipartFile> files = [];
     if (avatarFile != null) {
-      files.add(await http.MultipartFile.fromPath('avatar', avatarFile.path)); // Changed to http.MultipartFile.fromPath
+      files.add(await http.MultipartFile.fromPath('avatar', avatarFile.path));
       print('PocketBaseService: Attempting to upload new avatar from path: ${avatarFile.path}');
     }
 
     try {
-      // Use the correct collection name for users, which is typically 'users'
       final updatedRecord = await pb.collection('users').update(currentUser.id, body: body, files: files);
-      print('PocketBaseService: User profile updated successfully in PocketBase. New name: ${updatedRecord.getStringValue('name')}, New avatar filename: ${updatedRecord.getStringValue('avatar')}');
-      // Refresh the auth store model after update to get the latest data
+      print('PocketBaseService: User profile updated successfully in PocketBase. New name: ${updatedRecord.getStringValue('name')}, New email: ${updatedRecord.getStringValue('email')}, New avatar filename: ${updatedRecord.getStringValue('avatar')}');
       await pb.collection('users').authRefresh();
-      print('PocketBaseService: Auth store refreshed.');
     } catch (e) {
       print('PocketBaseService: FAILED to update user profile: $e');
-      // Re-throw the error to be caught by the calling screen
       throw Exception("Failed to update profile: $e");
     }
   }
+
+  Future<int> getUserSharedCount() async {
+    final currentUser = pb.authStore.model;
+    if (currentUser == null) {
+      print('PocketBaseService: No authenticated user to get shared count.');
+      return 0;
+    }
+    try {
+      final userRecord = await pb.collection('users').getOne(currentUser.id);
+      return userRecord.getIntValue('count_shared', 0);
+    } catch (e) {
+      print('PocketBaseService: Error getting user shared count: $e');
+      return 0;
+    }
+  }
+
+  Future<void> incrementUserSharedCount() async {
+    final currentUser = pb.authStore.model;
+    if (currentUser == null) {
+      print('PocketBaseService: No authenticated user to increment shared count.');
+      return;
+    }
+    try {
+      final currentCount = currentUser.getIntValue('count_shared', 0);
+      final newCount = currentCount + 1;
+      await pb.collection('users').update(currentUser.id, body: {'count_shared': newCount});
+      await pb.collection('users').authRefresh();
+      print('PocketBaseService: User shared count incremented to: $newCount');
+    } catch (e) {
+      print('PocketBaseService: Failed to increment user shared count: $e');
+    }
+  }
+
+  // Updated: Method to update an event
+  Future<RecordModel?> updateEvent(String eventId, Map<String, dynamic> body) async {
+    try {
+      final record = await pb.collection('event').update(eventId, body: body);
+      print('PocketBaseService: Event updated with ID: ${record.id}');
+      return record;
+    } catch (e) {
+      print('Error updating event: $e');
+      return null;
+    }
+  }
+
+  // Updated: Method to delete an event
+  Future<void> deleteEvent(String eventId) async {
+    try {
+      await pb.collection('event').delete(eventId);
+      print('PocketBaseService: Event deleted with ID: $eventId');
+    } catch (e) {
+      print('Error deleting event: $e');
+      throw Exception('Failed to delete event: $e');
+    }
+  }
+
+  Future<RecordModel?> fetchUserById(String userId) async {
+  try {
+    return await pb.collection('users').getOne(userId);
+  } catch (e) {
+    print('Error fetching user $userId: $e');
+    return null;
+  }
+  }
+
+ // NEW: Update event's participant lists
+  Future<void> updateEventParticipants({
+    required String eventId,
+    List<String>? participantsWaiting,
+    List<String>? participantsAccepted,
+  }) async {
+    try {
+      final body = <String, dynamic>{};
+      if (participantsWaiting != null) {
+        body['participants_waiting'] = participantsWaiting;
+      }
+      if (participantsAccepted != null) {
+        body['participants_accepted'] = participantsAccepted;
+      }
+      await pb.collection('event').update(eventId, body: body);
+      print('PocketBaseService: Updated participants for event $eventId');
+    } catch (e) {
+      print('Error updating event participants: $e');
+      throw Exception('Failed to update event participants: $e');
+    }
+  }
+
+  // NEW: Fetch a single event by ID with expansions
+  Future<RecordModel?> fetchEventById(String eventId) async {
+    try {
+      return await pb.collection('event').getOne(
+        eventId,
+        expand: 'participants_waiting,participants_accepted,organization_id,categories_id', // Ensure expansions
+      );
+    } catch (e) {
+      print('Error fetching event $eventId: $e');
+      return null;
+    }
+  }
+
+  Future<List<RecordModel>> fetchUsersByIds(List<String> userIds) async {
+    if (userIds.isEmpty) return [];
+    try {
+      // Create a filter string for multiple IDs
+      final filterString = userIds.map((id) => 'id = "$id"').join(' || ');
+      final records = await pb.collection('users').getFullList(
+        filter: filterString,
+      );
+      print('PocketBaseService: Fetched ${records.length} users for IDs: $userIds');
+      return records;
+    } catch (e) {
+      print('Error fetching users by IDs: $e');
+      return [];
+    }
+  }
+
+
 }
