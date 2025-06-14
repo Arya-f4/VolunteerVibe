@@ -342,28 +342,36 @@ class PocketBaseService {
 
    Future<int> getUnreadNotificationCount() async {
     final user = getCurrentUser();
-    if (user == null) {
-      return 0; // Tidak ada pengguna, tidak ada notifikasi
-    }
+    if (user == null) return 0;
 
     try {
-      // Filter untuk notifikasi yang belum dibaca (read = false) & status accepted
-      final filterString = "users_id = '${user.id}' && status = 'accepted' && read = false";
-      
-      // Kita hanya butuh jumlahnya, jadi kita ambil 1 halaman dengan 1 item per halaman.
-      // PocketBase akan tetap mengembalikan totalItems yang cocok dengan filter.
-      final result = await pb.collection('event_session').getList(
-        perPage: 1, 
-        filter: filterString,
-      );
+      // Jalankan kedua query secara paralel untuk efisiensi
+      final results = await Future.wait([
+        // Query 1: Hitung notifikasi session yang belum dibaca
+        pb.collection('event_session').getList(
+            perPage: 1,
+            filter: "users_id = '${user.id}' && status = 'accepted' && read = false",
+        ),
+        // Query 2: Hitung notifikasi reminder yang belum dibaca
+        pb.collection('event_reminder').getList(
+            perPage: 1,
+            filter: 'users_id ?~ "${user.id}" && read = false',
+        ),
+      ]);
 
-      print('PocketBaseService: Found ${result.totalItems} unread notifications for user ${user.id}.');
-      return result.totalItems;
+      final sessionCount = results[0].totalItems;
+      final reminderCount = results[1].totalItems;
+
+      final totalUnread = sessionCount + reminderCount;
+      print('PocketBaseService: Unread count -> Sessions: $sessionCount, Reminders: $reminderCount, Total: $totalUnread');
+
+      return totalUnread;
     } catch (e) {
-      print('Error fetching unread notification count: $e');
+      print('Error fetching total unread notification count: $e');
       return 0;
     }
   }
+
 
   Future<List<RecordModel>> fetchParticipantsForEvent(String eventId) async {
     try {
@@ -458,5 +466,135 @@ class PocketBaseService {
     }
   }
 
+   Future<List<RecordModel>> fetchEventReminders(String userId) async {
+    try {
+      final records = await pb.collection('event_reminder').getFullList(
+        filter: 'users_id ?~ "$userId"',
+        expand: 'event_id',
+      );
+      return records;
+    } catch (e) {
+      print('Error fetching event reminders: $e');
+      return [];
+    }
+  }
+
+  /// Menandai "Pengingat Acara" sebagai sudah dibaca.
+  Future<void> markReminderAsRead(String reminderId) async {
+    try {
+      await pb.collection('event_reminder').update(reminderId, body: {'read': true});
+    } catch (e) {
+      throw Exception('Failed to update reminder: $e');
+    }
+  }
+
+  /// Menghapus "Pengingat Acara".
+  Future<void> deleteReminder(String reminderId) async {
+    try {
+      await pb.collection('event_reminder').delete(reminderId);
+    } catch (e) {
+      throw Exception('Failed to delete reminder: $e');
+    }
+  }
+
+   Future<RecordModel?> fetchCurrentUserWithAchievements() async {
+    final user = getCurrentUser();
+    if (user == null) return null;
+
+    try {
+      // Gunakan expand untuk langsung mengambil detail dari achievment_id
+      final userRecord = await pb.collection('users').getOne(
+        user.id,
+        expand: 'achievment_id',
+      );
+      return userRecord;
+    } catch (e) {
+      print('Error fetching user with achievements: $e');
+      return user; // Kembalikan user biasa jika gagal expand
+    }
+  }
+
+    Future<List<RecordModel>> fetchAllAchievements() async {
+    try {
+      // Urutkan berdasarkan syarat count_event dari yang terkecil
+      final records = await pb.collection('achievment').getFullList(sort: '+count_event');
+      return records;
+    } catch (e) {
+      print('Error fetching all achievements: $e');
+      return [];
+    }
+  }
+
+  // [BARU] Fungsi utama untuk memeriksa dan memberikan achievements baru ke user
+  Future<void> checkAndGrantAchievements(String userId) async {
+    print('Checking achievements for user: $userId');
+    try {
+      // 1. Ambil data user terbaru untuk mendapatkan daftar achievement yang sudah dimiliki
+      final user = await pb.collection('users').getOne(userId);
+      final currentAchievementIds = user.getListValue<String>('achievment_id');
+
+      // 2. Hitung jumlah total event yang sudah diikuti (dan diterima) oleh user
+      final eventsJoinedCount = await getEventsJoinedCount(userId);
+      print('User has joined $eventsJoinedCount events.');
+
+      // 3. Ambil semua jenis achievement yang tersedia di database
+      final allAchievements = await fetchAllAchievements();
+      if (allAchievements.isEmpty) {
+        print('No achievements defined in the database. Skipping check.');
+        return;
+      }
+
+      final List<String> newlyEarnedAchievements = [];
+
+      // 4. Loop melalui setiap achievement untuk diperiksa
+      for (final achievement in allAchievements) {
+        final requiredCount = achievement.getIntValue('count_event');
+        final achievementId = achievement.id;
+
+        // 5. Periksa dua kondisi:
+        //    a. Apakah jumlah event yang diikuti user sudah memenuhi syarat?
+        //    b. Apakah user BELUM memiliki achievement ini?
+        if (eventsJoinedCount >= requiredCount && !currentAchievementIds.contains(achievementId)) {
+          print('-> User qualifies for new achievement: "${achievement.getStringValue('badge_name')}"');
+          newlyEarnedAchievements.add(achievementId);
+        }
+      }
+
+      // 6. Jika ada achievement baru yang didapat, update data user
+      if (newlyEarnedAchievements.isNotEmpty) {
+        print('Granting ${newlyEarnedAchievements.length} new achievement(s) to user $userId.');
+        // Gabungkan achievement lama dengan yang baru dan update ke database
+        final updatedAchievements = [...currentAchievementIds, ...newlyEarnedAchievements];
+        await pb.collection('users').update(userId, body: {
+          'achievment_id': updatedAchievements
+        });
+        print('User achievements updated successfully!');
+      } else {
+        print('No new achievements earned at this time.');
+      }
+
+    } catch (e) {
+      print('An error occurred during achievement check for user $userId: $e');
+    }
+  }
+
+  Future<void> addPointsToUser(String userId, int pointsToAdd) async {
+    if (pointsToAdd <= 0) {
+      print('No points to add.');
+      return;
+    }
+    
+    try {
+      // Menggunakan 'points+' akan menambah nilai yang ada di server
+      // dengan nilai pointsToAdd, bukan menimpanya.
+      await pb.collection('users').update(userId, body: {
+        'points+': pointsToAdd,
+      });
+      print('PocketBaseService: Added $pointsToAdd points to user $userId.');
+    } catch (e) {
+      print('Error adding points to user $userId: $e');
+      throw Exception('Failed to add points to user');
+    }
+  }
 
 }

@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:pocketbase/pocketbase.dart';
 import 'package:volunteervibe/services/pocketbase_service.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart' as latlng;
+import 'package:volunteervibe/services/location_service.dart';
 
 class CreateEventBottomSheet extends StatefulWidget {
   final RecordModel organization;
@@ -17,144 +20,192 @@ class CreateEventBottomSheet extends StatefulWidget {
   _CreateEventBottomSheetState createState() => _CreateEventBottomSheetState();
 }
 
-class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> with TickerProviderStateMixin {
+class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> {
   final PocketBaseService _pbService = PocketBaseService();
   final _formKey = GlobalKey<FormState>();
   final _pageController = PageController();
   
+  final LocationService _locationService = LocationService();
+  final MapController _mapController = MapController();
+  
   // Controllers
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
-  final _locationController = TextEditingController();
   final _maxParticipantController = TextEditingController();
   final _pointsController = TextEditingController();
-  final _durationController = TextEditingController();
   
   // State
   int _currentStep = 0;
   bool _isLoading = false;
   DateTime _selectedDate = DateTime.now().add(Duration(days: 1));
   TimeOfDay _selectedTime = TimeOfDay(hour: 9, minute: 0);
-  String? _selectedCategory;
   
-  // Animation
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
-
-  final List<String> _categories = [
-    'Environment',
-    'Education',
-    'Health',
-    'Community',
-    'Animals',
-    'Elderly Care',
-    'Children',
-    'Disaster Relief',
-  ];
+  List<RecordModel> _fetchedCategories = [];
+  String? _selectedCategoryId;
+  
+  latlng.LatLng _selectedLocation = latlng.LatLng(-7.2575, 112.7521);
+  String _locationAddress = "Memuat lokasi...";
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      duration: Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
-    );
-    _animationController.forward();
+    _initializeData();
+  }
+  
+  void _initializeData() async {
+    await _loadCategories();
+    await _initializeLocation();
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
     _titleController.dispose();
     _descriptionController.dispose();
-    _locationController.dispose();
     _maxParticipantController.dispose();
     _pointsController.dispose();
-    _durationController.dispose();
     _pageController.dispose();
+    _mapController.dispose();
     super.dispose();
   }
 
+  Future<void> _loadCategories() async {
+    final categories = await _pbService.fetchEventCategories();
+    if (mounted) {
+      setState(() {
+        _fetchedCategories = categories;
+      });
+    }
+  }
+
+  Future<void> _initializeLocation() async {
+    try {
+      final position = await _locationService.getCurrentPosition();
+      if (mounted) {
+        setState(() {
+          _selectedLocation = latlng.LatLng(position.latitude, position.longitude);
+          _locationAddress = "Lokasi Anda saat ini terdeteksi";
+        });
+        _mapController.move(_selectedLocation, 15.0);
+      }
+    } catch (e) {
+      print("Could not get current location: $e");
+      if (mounted) {
+        setState(() {
+          _locationAddress = "Gagal mendapatkan lokasi, gunakan default.";
+        });
+      }
+    }
+  }
+  
+  void _updateLocation(latlng.LatLng location) {
+    setState(() {
+      _selectedLocation = location;
+      _locationAddress = "${location.latitude.toStringAsFixed(5)}, ${location.longitude.toStringAsFixed(5)}";
+    });
+    _mapController.move(location, _mapController.camera.zoom);
+  }
+
+  // [PERBAIKAN FINAL] Hanya ada perubahan di dalam fungsi _createEvent
+  Future<void> _createEvent() async {
+    if (!_formKey.currentState!.validate() || _selectedCategoryId == null) return;
+    
+    setState(() => _isLoading = true);
+    try {
+      final eventDateTime = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, _selectedTime.hour, _selectedTime.minute);
+      
+      final body = <String, dynamic>{
+        "title": _titleController.text,
+        "description": _descriptionController.text,
+        "date": eventDateTime.toIso8601String(),
+        
+        // [PERBAIKAN] Mengirim lokasi sebagai objek Map, bukan String.
+        // Ini sesuai dengan tipe data 'map' di PocketBase.
+        "location": {
+          "lat": _selectedLocation.latitude,
+          "lon": _selectedLocation.longitude
+        },
+
+        "max_participant": int.tryParse(_maxParticipantController.text) ?? 0,
+        "point_event": int.tryParse(_pointsController.text) ?? 0,
+        "organization_id": widget.organization.id,
+        "categories_id": _selectedCategoryId,
+      };
+
+      final record = await _pbService.createEvent(body: body);
+
+      if (record != null) {
+        Navigator.pop(context);
+        widget.onEventCreated();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Event created successfully!'), backgroundColor: Color(0xFF10B981), behavior: SnackBarBehavior.floating),
+        );
+      } else {
+        throw Exception('Failed to create event record.');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal membuat event: Periksa kembali format input Anda.'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
+      );
+    } finally {
+      if(mounted) setState(() => _isLoading = false);
+    }
+  }
+
+
+  // Sisa kode di bawah ini tidak ada yang berubah.
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.9,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: Column(
-        children: [
-          _buildHeader(),
-          _buildProgressIndicator(),
-          Expanded(
-            child: PageView(
-              controller: _pageController,
-              physics: NeverScrollableScrollPhysics(),
-              children: [
-                _buildBasicInfoStep(),
-                _buildDetailsStep(),
-                _buildDateTimeStep(),
-                _buildReviewStep(),
-              ],
+    return Form(
+      key: _formKey,
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.9,
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        child: Column(
+          children: [
+            _buildHeader(),
+            _buildProgressIndicator(),
+            Expanded(
+              child: PageView(
+                controller: _pageController,
+                physics: NeverScrollableScrollPhysics(),
+                children: [
+                  _buildBasicInfoStep(),
+                  _buildDetailsStep(),
+                  _buildDateTimeStep(),
+                  _buildReviewStep(),
+                ],
+              ),
             ),
-          ),
-          _buildBottomButtons(),
-        ],
+            _buildBottomButtons(),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildHeader() {
     return Container(
-      padding: EdgeInsets.all(24),
+      padding: EdgeInsets.fromLTRB(24, 24, 16, 24),
       child: Row(
         children: [
           Container(
             padding: EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Color(0xFF6C63FF).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              Icons.event_note,
-              color: Color(0xFF6C63FF),
-              size: 24,
-            ),
+            decoration: BoxDecoration(color: Color(0xFF6C63FF).withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+            child: Icon(Icons.event_note, color: Color(0xFF6C63FF), size: 24),
           ),
           SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Create New Event',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF2D3748),
-                  ),
-                ),
-                Text(
-                  'Step ${_currentStep + 1} of 4',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF718096),
-                  ),
-                ),
+                Text('Create New Event', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
+                Text('Step ${_currentStep + 1} of 4', style: TextStyle(fontSize: 14, color: Color(0xFF718096))),
               ],
             ),
           ),
           IconButton(
             onPressed: () => Navigator.pop(context),
             icon: Icon(Icons.close, color: Color(0xFF718096)),
-            style: IconButton.styleFrom(
-              backgroundColor: Colors.grey.shade100,
-              shape: CircleBorder(),
-            ),
           ),
         ],
       ),
@@ -167,7 +218,8 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> with Ti
       child: Row(
         children: List.generate(4, (index) {
           return Expanded(
-            child: Container(
+            child: AnimatedContainer(
+              duration: Duration(milliseconds: 300),
               height: 4,
               margin: EdgeInsets.symmetric(horizontal: 2),
               decoration: BoxDecoration(
@@ -187,21 +239,14 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> with Ti
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Basic Information',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF2D3748),
-            ),
-          ),
+          Text('Basic Information', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
           SizedBox(height: 24),
           _buildTextField(
             controller: _titleController,
             label: 'Event Title',
             hint: 'Enter a compelling event title',
             icon: Icons.title,
-            validator: (value) => value?.isEmpty ?? true ? 'Title is required' : null,
+            validator: (value) => value == null || value.isEmpty ? 'Title is required' : null,
           ),
           SizedBox(height: 20),
           _buildTextField(
@@ -210,7 +255,7 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> with Ti
             hint: 'Describe what volunteers will do',
             icon: Icons.description,
             maxLines: 4,
-            validator: (value) => value?.isEmpty ?? true ? 'Description is required' : null,
+            validator: (value) => value == null || value.isEmpty ? 'Description is required' : null,
           ),
           SizedBox(height: 20),
           _buildCategorySelector(),
@@ -225,56 +270,43 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> with Ti
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Event Details',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF2D3748),
-            ),
-          ),
+          Text('Event Details & Location', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           SizedBox(height: 24),
-          _buildTextField(
-            controller: _locationController,
-            label: 'Location',
-            hint: 'Enter coordinates (lat,lon) or address',
-            icon: Icons.location_on,
-            validator: (value) => value?.isEmpty ?? true ? 'Location is required' : null,
-          ),
+          _buildLocationPicker(),
           SizedBox(height: 20),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: _buildTextField(
                   controller: _maxParticipantController,
                   label: 'Max Participants',
-                  hint: '0',
+                  hint: 'e.g., 50',
                   icon: Icons.people,
                   keyboardType: TextInputType.number,
-                  validator: (value) => value?.isEmpty ?? true ? 'Required' : null,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) return 'Required';
+                    if (int.tryParse(value) == null) return 'Invalid number';
+                    return null;
+                  },
                 ),
               ),
               SizedBox(width: 16),
               Expanded(
                 child: _buildTextField(
-                  controller: _durationController,
-                  label: 'Duration (hours)',
-                  hint: '0',
-                  icon: Icons.access_time,
+                  controller: _pointsController,
+                  label: 'Points Reward',
+                  hint: 'e.g., 100',
+                  icon: Icons.star,
                   keyboardType: TextInputType.number,
-                  validator: (value) => value?.isEmpty ?? true ? 'Required' : null,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) return 'Required';
+                    if (int.tryParse(value) == null) return 'Invalid number';
+                    return null;
+                  },
                 ),
               ),
             ],
-          ),
-          SizedBox(height: 20),
-          _buildTextField(
-            controller: _pointsController,
-            label: 'Points Reward',
-            hint: 'Points volunteers will earn',
-            icon: Icons.star,
-            keyboardType: TextInputType.number,
-            validator: (value) => value?.isEmpty ?? true ? 'Points are required' : null,
           ),
         ],
       ),
@@ -287,14 +319,7 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> with Ti
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Date & Time',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF2D3748),
-            ),
-          ),
+          Text('Date & Time', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
           SizedBox(height: 24),
           _buildDateTimeSelector(),
         ],
@@ -308,14 +333,7 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> with Ti
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Review & Create',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF2D3748),
-            ),
-          ),
+          Text('Review & Create', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
           SizedBox(height: 24),
           _buildReviewCard(),
         ],
@@ -326,7 +344,7 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> with Ti
   Widget _buildTextField({
     required TextEditingController controller,
     required String label,
-    required String hint,
+    String? hint,
     required IconData icon,
     int maxLines = 1,
     TextInputType? keyboardType,
@@ -335,14 +353,7 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> with Ti
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF4A5568),
-          ),
-        ),
+        Text(label, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF4A5568))),
         SizedBox(height: 8),
         TextFormField(
           controller: controller,
@@ -352,22 +363,48 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> with Ti
           decoration: InputDecoration(
             hintText: hint,
             prefixIcon: Icon(icon, color: Color(0xFF718096)),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Color(0xFFE2E8F0)),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Color(0xFFE2E8F0)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: Color(0xFF6C63FF), width: 2),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Color(0xFFE2E8F0))),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Color(0xFFE2E8F0))),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Color(0xFF6C63FF), width: 2)),
+            errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.red, width: 1.5)),
+            focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.red, width: 2)),
             filled: true,
-            fillColor: Color(0xFFF8FAFC),
+            fillColor: Colors.white,
           ),
         ),
+      ],
+    );
+  }
+  
+  Widget _buildLocationPicker() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text("Pilih Lokasi Event (Tap Peta)", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF4A5568))),
+        SizedBox(height: 8),
+        Container(
+          height: 250,
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade300)),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: _selectedLocation,
+                initialZoom: 13.0,
+                onTap: (_, point) => _updateLocation(point),
+              ),
+              children: [
+                TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
+                MarkerLayer(
+                  markers: [Marker(point: _selectedLocation, child: Icon(Icons.location_pin, color: Colors.red, size: 40.0))],
+                ),
+              ],
+            ),
+          ),
+        ),
+        SizedBox(height: 8),
+        Text("Lokasi: $_locationAddress", style: TextStyle(color: Colors.grey.shade700, fontStyle: FontStyle.italic)),
       ],
     );
   }
@@ -376,229 +413,96 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> with Ti
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Category',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF4A5568),
-          ),
-        ),
+        Text('Category', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF4A5568))),
         SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: _categories.map((category) {
-            final isSelected = _selectedCategory == category;
-            return GestureDetector(
-              onTap: () {
-                setState(() {
-                  _selectedCategory = category;
-                });
-              },
-              child: Container(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: isSelected ? Color(0xFF6C63FF) : Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isSelected ? Color(0xFF6C63FF) : Color(0xFFE2E8F0),
-                  ),
-                ),
-                child: Text(
-                  category,
-                  style: TextStyle(
-                    color: isSelected ? Colors.white : Color(0xFF4A5568),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            );
-          }).toList(),
-        ),
+        if (_fetchedCategories.isEmpty)
+          Center(child: CircularProgressIndicator(color: Color(0xFF6C63FF)))
+        else
+          DropdownButtonFormField<String>(
+            value: _selectedCategoryId,
+            hint: Text('Select a category'),
+            items: _fetchedCategories.map((category) => DropdownMenuItem<String>(
+              value: category.id,
+              child: Text(category.getStringValue('name')),
+            )).toList(),
+            onChanged: (value) => setState(() => _selectedCategoryId = value),
+            validator: (value) => value == null ? 'Category is required' : null,
+            decoration: InputDecoration(
+              prefixIcon: Icon(Icons.category, color: Color(0xFF718096)),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Color(0xFFE2E8F0))),
+            ),
+          ),
       ],
     );
   }
 
   Widget _buildDateTimeSelector() {
-    return Column(
+    return Row(
       children: [
-        Container(
-          padding: EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Color(0xFFF8FAFC),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Color(0xFFE2E8F0)),
-          ),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.calendar_today, color: Color(0xFF6C63FF)),
-                  SizedBox(width: 12),
-                  Text(
-                    'Event Date',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF2D3748),
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: 16),
-              GestureDetector(
-                onTap: _selectDate,
-                child: Container(
-                  width: double.infinity,
-                  padding: EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Color(0xFFE2E8F0)),
-                  ),
-                  child: Text(
-                    DateFormat('EEEE, MMMM dd, yyyy').format(_selectedDate),
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Color(0xFF2D3748),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        SizedBox(height: 20),
-        Container(
-          padding: EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Color(0xFFF8FAFC),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Color(0xFFE2E8F0)),
-          ),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.access_time, color: Color(0xFF6C63FF)),
-                  SizedBox(width: 12),
-                  Text(
-                    'Event Time',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF2D3748),
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: 16),
-              GestureDetector(
-                onTap: _selectTime,
-                child: Container(
-                  width: double.infinity,
-                  padding: EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Color(0xFFE2E8F0)),
-                  ),
-                  child: Text(
-                    _selectedTime.format(context),
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Color(0xFF2D3748),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+        Expanded(child: _buildDateSelector()),
+        SizedBox(width: 16),
+        Expanded(child: _buildTimeSelector()),
       ],
     );
   }
 
-  Widget _buildReviewCard() {
-    final eventDateTime = DateTime(
-      _selectedDate.year,
-      _selectedDate.month,
-      _selectedDate.day,
-      _selectedTime.hour,
-      _selectedTime.minute,
+  Widget _buildDateSelector() {
+    return InkWell(
+      onTap: _selectDate,
+      child: Container(
+        padding: EdgeInsets.all(12),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade300)),
+        child: Row(
+          children: [
+            Icon(Icons.calendar_today, color: Color(0xFF6C63FF)),
+            SizedBox(width: 8),
+            Expanded(child: Text(DateFormat('dd MMM yy').format(_selectedDate), style: TextStyle(fontSize: 16))),
+          ],
+        ),
+      ),
     );
+  }
+  
+  Widget _buildTimeSelector() {
+    return InkWell(
+      onTap: _selectTime,
+      child: Container(
+        padding: EdgeInsets.all(12),
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade300)),
+        child: Row(
+          children: [
+            Icon(Icons.access_time, color: Color(0xFF6C63FF)),
+            SizedBox(width: 8),
+            Expanded(child: Text(_selectedTime.format(context), style: TextStyle(fontSize: 16))),
+          ],
+        ),
+      ),
+    );
+  }
 
+  Widget _buildReviewCard() {
+    final eventDateTime = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, _selectedTime.hour, _selectedTime.minute);
+    final categoryName = _fetchedCategories.firstWhere((cat) => cat.id == _selectedCategoryId, orElse: () => RecordModel()).getStringValue('name', 'N/A');
     return Container(
       padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Color(0xFFE2E8F0)),
-      ),
+      decoration: BoxDecoration(color: Color(0xFFF8FAFC), borderRadius: BorderRadius.circular(16), border: Border.all(color: Color(0xFFE2E8F0))),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            _titleController.text,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF2D3748),
-            ),
-          ),
+          Text(_titleController.text, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
           SizedBox(height: 8),
-          if (_selectedCategory != null)
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: Color(0xFF6C63FF).withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                _selectedCategory!,
-                style: TextStyle(
-                  color: Color(0xFF6C63FF),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(color: Color(0xFF6C63FF).withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+            child: Text(categoryName, style: TextStyle(color: Color(0xFF6C63FF), fontSize: 12, fontWeight: FontWeight.w600)),
+          ),
           SizedBox(height: 16),
-          Text(
-            _descriptionController.text,
-            style: TextStyle(
-              color: Color(0xFF4A5568),
-              fontSize: 14,
-              height: 1.5,
-            ),
-          ),
+          Text(_descriptionController.text, style: TextStyle(color: Color(0xFF4A5568), fontSize: 14, height: 1.5)),
           SizedBox(height: 20),
-          _buildReviewItem(
-            Icons.calendar_today,
-            'Date & Time',
-            DateFormat('MMM dd, yyyy • HH:mm').format(eventDateTime),
-          ),
-          _buildReviewItem(
-            Icons.location_on,
-            'Location',
-            _locationController.text,
-          ),
-          _buildReviewItem(
-            Icons.people,
-            'Max Participants',
-            _maxParticipantController.text,
-          ),
-          _buildReviewItem(
-            Icons.access_time,
-            'Duration',
-            '${_durationController.text} hours',
-          ),
-          _buildReviewItem(
-            Icons.star,
-            'Points Reward',
-            _pointsController.text,
-          ),
+          _buildReviewItem(Icons.calendar_today, 'Date & Time', DateFormat('MMM dd, yyyy • HH:mm').format(eventDateTime)),
+          _buildReviewItem(Icons.location_on, 'Location', _locationAddress),
+          _buildReviewItem(Icons.people, 'Max Participants', _maxParticipantController.text),
+          _buildReviewItem(Icons.star, 'Points Reward', _pointsController.text),
         ],
       ),
     );
@@ -611,22 +515,9 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> with Ti
         children: [
           Icon(icon, size: 16, color: Color(0xFF718096)),
           SizedBox(width: 12),
-          Text(
-            label,
-            style: TextStyle(
-              color: Color(0xFF718096),
-              fontSize: 14,
-            ),
-          ),
+          Text(label, style: TextStyle(color: Color(0xFF718096), fontSize: 14)),
           Spacer(),
-          Text(
-            value,
-            style: TextStyle(
-              color: Color(0xFF2D3748),
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+          Expanded(child: Text(value, style: TextStyle(color: Color(0xFF2D3748), fontSize: 14, fontWeight: FontWeight.w500), textAlign: TextAlign.end, overflow: TextOverflow.ellipsis)),
         ],
       ),
     );
@@ -635,55 +526,21 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> with Ti
   Widget _buildBottomButtons() {
     return Container(
       padding: EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
-      ),
+      decoration: BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: Color(0xFFE2E8F0)))),
       child: Row(
         children: [
           if (_currentStep > 0)
             Expanded(
-              child: OutlinedButton(
-                onPressed: _previousStep,
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: Color(0xFF6C63FF)),
-                  foregroundColor: Color(0xFF6C63FF),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                ),
-                child: Text('Previous'),
-              ),
+              child: OutlinedButton(onPressed: _previousStep, child: Text('Previous'), style: OutlinedButton.styleFrom(side: BorderSide(color: Color(0xFF6C63FF)), foregroundColor: Color(0xFF6C63FF), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), padding: EdgeInsets.symmetric(vertical: 16))),
             ),
           if (_currentStep > 0) SizedBox(width: 16),
           Expanded(
             child: ElevatedButton(
               onPressed: _isLoading ? null : _nextStep,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Color(0xFF6C63FF),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: EdgeInsets.symmetric(vertical: 16),
-              ),
+              style: ElevatedButton.styleFrom(backgroundColor: Color(0xFF6C63FF), foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), padding: EdgeInsets.symmetric(vertical: 16)),
               child: _isLoading
-                ? SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2,
-                    ),
-                  )
-                : Text(
-                    _currentStep == 3 ? 'Create Event' : 'Next',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 16,
-                    ),
-                  ),
+                  ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : Text(_currentStep == 3 ? 'Create Event' : 'Next', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
             ),
           ),
         ],
@@ -692,16 +549,17 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> with Ti
   }
 
   void _nextStep() {
+    if (!_formKey.currentState!.validate()) {
+       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please correct the errors before proceeding.'), backgroundColor: Colors.orange));
+       return;
+    }
+    if (_currentStep == 0 && _selectedCategoryId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Please select a category.'), backgroundColor: Colors.orange));
+      return;
+    }
     if (_currentStep < 3) {
-      if (_validateCurrentStep()) {
-        setState(() {
-          _currentStep++;
-        });
-        _pageController.nextPage(
-          duration: Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-        );
-      }
+      setState(() => _currentStep++);
+      _pageController.animateToPage(_currentStep, duration: Duration(milliseconds: 400), curve: Curves.easeInOut);
     } else {
       _createEvent();
     }
@@ -709,137 +567,18 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> with Ti
 
   void _previousStep() {
     if (_currentStep > 0) {
-      setState(() {
-        _currentStep--;
-      });
-      _pageController.previousPage(
-        duration: Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
+      setState(() => _currentStep--);
+      _pageController.animateToPage(_currentStep, duration: Duration(milliseconds: 400), curve: Curves.easeInOut);
     }
   }
-
-  bool _validateCurrentStep() {
-    switch (_currentStep) {
-      case 0:
-        return _titleController.text.isNotEmpty &&
-               _descriptionController.text.isNotEmpty &&
-               _selectedCategory != null;
-      case 1:
-        return _locationController.text.isNotEmpty &&
-               _maxParticipantController.text.isNotEmpty &&
-               _pointsController.text.isNotEmpty &&
-               _durationController.text.isNotEmpty;
-      case 2:
-        return true; // Date and time are always valid
-      default:
-        return true;
-    }
-  }
-
+  
   Future<void> _selectDate() async {
-    final pickedDate = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime.now(),
-      lastDate: DateTime(2030),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: Color(0xFF6C63FF),
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-    if (pickedDate != null) {
-      setState(() {
-        _selectedDate = pickedDate;
-      });
-    }
+    final pickedDate = await showDatePicker(context: context, initialDate: _selectedDate, firstDate: DateTime.now(), lastDate: DateTime(2030), builder: (context, child) => Theme(data: Theme.of(context).copyWith(colorScheme: ColorScheme.light(primary: Color(0xFF6C63FF))), child: child!));
+    if (pickedDate != null) setState(() => _selectedDate = pickedDate);
   }
 
   Future<void> _selectTime() async {
-    final pickedTime = await showTimePicker(
-      context: context,
-      initialTime: _selectedTime,
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: Color(0xFF6C63FF),
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-    if (pickedTime != null) {
-      setState(() {
-        _selectedTime = pickedTime;
-      });
-    }
-  }
-
-  Future<void> _createEvent() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final latlon = _locationController.text.split(',');
-      final eventDateTime = DateTime(
-        _selectedDate.year,
-        _selectedDate.month,
-        _selectedDate.day,
-        _selectedTime.hour,
-        _selectedTime.minute,
-      );
-
-      final body = <String, dynamic>{
-        "title": _titleController.text,
-        "description": _descriptionController.text,
-        "date": eventDateTime.toIso8601String(),
-        "location": {
-          "lat": double.tryParse(latlon[0].trim()),
-          "lon": double.tryParse(latlon[1].trim())
-        },
-        "max_participant": int.tryParse(_maxParticipantController.text),
-        "point_event": int.tryParse(_pointsController.text),
-        "duration_hours": int.tryParse(_durationController.text),
-        "organization_id": widget.organization.id,
-        "category": _selectedCategory,
-      };
-
-      final record = await _pbService.createEvent(body: body);
-
-      if (record != null) {
-        Navigator.pop(context);
-        widget.onEventCreated();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Event created successfully!'),
-            backgroundColor: Color(0xFF10B981),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      } else {
-        throw Exception('Failed to create event');
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to create event: $e'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
-    }
+    final pickedTime = await showTimePicker(context: context, initialTime: _selectedTime, builder: (context, child) => Theme(data: Theme.of(context).copyWith(colorScheme: ColorScheme.light(primary: Color(0xFF6C63FF))), child: child!));
+    if (pickedTime != null) setState(() => _selectedTime = pickedTime);
   }
 }

@@ -14,8 +14,6 @@ class EventParticipantsScreen extends StatefulWidget {
 class _EventParticipantsScreenState extends State<EventParticipantsScreen> {
   final PocketBaseService _pbService = PocketBaseService();
   bool _isLoading = true;
-
-  // Simpan data mentah dari session untuk membantu proses 'accept'
   List<RecordModel> _sessions = [];
   List<RecordModel> _waitingParticipants = [];
   List<RecordModel> _acceptedParticipants = [];
@@ -26,29 +24,28 @@ class _EventParticipantsScreenState extends State<EventParticipantsScreen> {
     _loadParticipants();
   }
 
-  // [LOGIKA BARU] Memuat data dari DUA sumber:
-  // 1. 'event_session' untuk daftar tunggu.
-  // 2. 'event.participant_id' untuk daftar yang diterima.
   Future<void> _loadParticipants() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
-
     try {
-      // 1. Ambil data DAFTAR TUNGGU dari 'event_session'
+      // Ambil semua session yang terkait dengan event ini
       _sessions = await _pbService.fetchParticipantsForEvent(widget.event.id);
-      final waitingList = <RecordModel>[];
+      
+      List<RecordModel> waiting = [];
+      // Pisahkan user yang berstatus 'waiting' dari data session
       for (var session in _sessions) {
         if (session.getStringValue('status') == 'waiting' &&
             session.expand['users_id'] != null &&
             session.expand['users_id']!.isNotEmpty) {
-          waitingList.add(session.expand['users_id']!.first);
+          waiting.add(session.expand['users_id']!.first);
         }
       }
 
-      // 2. Ambil data DITERIMA dari 'event.participant_id'
+      // Ambil data event terbaru untuk mendapatkan daftar peserta yang sudah diterima
       final latestEvent = await _pbService.fetchEventById(widget.event.id);
       if (latestEvent == null) throw Exception('Gagal memuat detail event terbaru.');
       
+      // Ambil user dari daftar 'participant_id' di event
       final acceptedIds = latestEvent.getListValue<String>('participant_id');
       final acceptedList = acceptedIds.isNotEmpty
           ? await _pbService.fetchUsersByIds(acceptedIds)
@@ -56,7 +53,7 @@ class _EventParticipantsScreenState extends State<EventParticipantsScreen> {
 
       if (mounted) {
         setState(() {
-          _waitingParticipants = waitingList;
+          _waitingParticipants = waiting;
           _acceptedParticipants = acceptedList;
         });
       }
@@ -64,17 +61,11 @@ class _EventParticipantsScreenState extends State<EventParticipantsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Gagal memuat peserta: $e'), backgroundColor: Colors.red),
       );
-      print('Error loading participants: $e');
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  // [LOGIKA BARU] Proses 'Accept' sekarang melakukan 2 aksi:
-  // 1. Menambahkan user ke event.participant_id.
-  // 2. Mengubah status di event_session menjadi 'accepted'.
   Future<void> _acceptParticipant(RecordModel participant) async {
     // Cari session ID yang sesuai dari daftar session yang sudah kita simpan
     final session = _sessions.firstWhere(
@@ -82,9 +73,12 @@ class _EventParticipantsScreenState extends State<EventParticipantsScreen> {
       orElse: () => throw Exception('Session tidak ditemukan untuk peserta'),
     );
     
-    setState(() => _isLoading = true); // Tampilkan loading indicator
+    setState(() => _isLoading = true);
 
     try {
+      // Ambil jumlah poin dari event ini
+      final eventPoints = widget.event.getIntValue('point_event', 0);
+
       // Aksi 1: Tambahkan ID user ke dalam daftar participant_id di event
       await _pbService.addParticipantToEvent(widget.event.id, participant.id);
 
@@ -94,20 +88,25 @@ class _EventParticipantsScreenState extends State<EventParticipantsScreen> {
         newStatus: 'accepted',
       );
       
+      // Aksi 3: Tambahkan poin ke user
+      await _pbService.addPointsToUser(participant.id, eventPoints);
+      
+      // Aksi 4: Panggil fungsi pengecekan achievement untuk user yang baru diterima
+      await _pbService.checkAndGrantAchievements(participant.id);
+      
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${participant.getStringValue('name')} diterima!'), backgroundColor: Colors.green),
+        SnackBar(content: Text('${participant.getStringValue('name')} diterima & mendapatkan $eventPoints poin!'), backgroundColor: Colors.green),
       );
       
-      // Muat ulang seluruh data untuk memastikan UI sinkron
+      // Muat ulang seluruh daftar untuk menampilkan perubahan
       await _loadParticipants(); 
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Gagal menerima peserta: $e'), backgroundColor: Colors.red),
       );
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      // Pastikan loading indicator hilang meskipun ada error
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -131,7 +130,11 @@ class _EventParticipantsScreenState extends State<EventParticipantsScreen> {
                       padding: const EdgeInsets.fromLTRB(24.0, 16.0, 24.0, 8.0),
                       child: Text(
                         'Waiting for Approval (${_waitingParticipants.length})',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2D3748)),
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF2D3748),
+                        ),
                       ),
                     ),
                   ),
@@ -158,7 +161,11 @@ class _EventParticipantsScreenState extends State<EventParticipantsScreen> {
                       padding: const EdgeInsets.fromLTRB(24.0, 24.0, 24.0, 8.0),
                       child: Text(
                         'Accepted Participants (${_acceptedParticipants.length})',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2D3748)),
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF2D3748),
+                        ),
                       ),
                     ),
                   ),
@@ -213,12 +220,19 @@ class _EventParticipantsScreenState extends State<EventParticipantsScreen> {
                 children: [
                   Text(
                     participant.getStringValue('name', 'Unknown User'),
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF2D3748)),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: Color(0xFF2D3748),
+                    ),
                   ),
                   SizedBox(height: 4),
                   Text(
                     participant.getStringValue('email', 'No Email'),
-                    style: TextStyle(fontSize: 13, color: Color(0xFF718096)),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF718096),
+                    ),
                   ),
                 ],
               ),

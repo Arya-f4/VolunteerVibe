@@ -1,17 +1,15 @@
-// lib/home_screen.dart
-
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:intl/intl.dart';
 import 'package:pocketbase/pocketbase.dart';
 import 'package:volunteervibe/services/pocketbase_service.dart';
-import 'profile_screen.dart';
-import 'event_detail_screen.dart';
-import 'search_screen.dart';
-import 'gamification_screen.dart';
-import 'social_sharing_screen.dart';
-import 'volunteer_hours_screen.dart';
-import 'notification_screen.dart';
+import 'package:volunteervibe/screens/profile_screen.dart';
+import 'package:volunteervibe/screens/event_detail_screen.dart';
+import 'package:volunteervibe/screens/search_screen.dart';
+import 'package:volunteervibe/screens/gamification_screen.dart';
+import 'package:volunteervibe/screens/social_sharing_screen.dart';
+import 'package:volunteervibe/screens/volunteer_hours_screen.dart';
+import 'package:volunteervibe/screens/notification_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   @override
@@ -19,27 +17,20 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
-  // Service
   final PocketBaseService _pbService = PocketBaseService();
-
-  // Animation Controllers
   late AnimationController _fadeController;
   late AnimationController _slideController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
-
-  // UI State
   int _bottomNavIndex = 0;
   bool _isLoading = true;
-
-  // Data State
   String _userName = 'Guest';
   String? _userAvatarUrl;
   int _userPoints = 0;
   int _eventsJoined = 0;
-  List<RecordModel> _events = [];
-  // [BARU] State untuk menyimpan jumlah notifikasi yang belum dibaca
   int _unreadNotificationCount = 0;
+  List<RecordModel> _events = [];
+  List<RecordModel> _achievements = [];
 
   @override
   void initState() {
@@ -49,23 +40,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   void _initializeAnimations() {
-    _fadeController = AnimationController(
-      duration: Duration(milliseconds: 800),
-      vsync: this,
-    );
-    _slideController = AnimationController(
-      duration: Duration(milliseconds: 600),
-      vsync: this,
-    );
-
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
-    );
-
-    _slideAnimation = Tween<Offset>(
-      begin: Offset(0, 0.3),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic));
+    _fadeController = AnimationController(duration: Duration(milliseconds: 800), vsync: this);
+    _slideController = AnimationController(duration: Duration(milliseconds: 600), vsync: this);
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut));
+    _slideAnimation = Tween<Offset>(begin: Offset(0, 0.3), end: Offset.zero).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic));
   }
 
   @override
@@ -75,16 +53,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  // [MODIFIKASI] Memuat semua data secara paralel untuk efisiensi
   Future<void> _loadInitialData() async {
     setState(() => _isLoading = true);
-
     await Future.wait([
-      _loadUserData(),
+      _loadUserDataAndAchievements(),
       _fetchJoinedEvents(),
       _fetchUnreadNotificationCount(),
     ]);
-
     if (mounted) {
       setState(() => _isLoading = false);
       _fadeController.forward();
@@ -92,40 +67,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  Future<void> _loadUserData() async {
-    final userRecord = _pbService.getCurrentUser();
-    if (userRecord != null) {
+  Future<void> _loadUserDataAndAchievements() async {
+    final userWithAchievements = await _pbService.fetchCurrentUserWithAchievements();
+    if (userWithAchievements != null) {
       if (mounted) {
         setState(() {
-          _userName = userRecord.data['name'] ?? 'Guest';
-          _userPoints = userRecord.data['points'] ?? 0;
-          final avatarFilename = userRecord.data['avatar'];
-          if (avatarFilename != null && avatarFilename.isNotEmpty) {
-            _userAvatarUrl = _pbService.getFileUrl(userRecord, avatarFilename);
+          _userName = userWithAchievements.getStringValue('name', 'Guest');
+          _userPoints = userWithAchievements.getIntValue('points', 0);
+          final avatarFilename = userWithAchievements.getStringValue('avatar');
+          if (avatarFilename.isNotEmpty) {
+            _userAvatarUrl = _pbService.getFileUrl(userWithAchievements, avatarFilename);
           }
+          _achievements = userWithAchievements.expand['achievment_id'] ?? [];
         });
       }
-      _eventsJoined = await _pbService.getEventsJoinedCount(userRecord.id);
+      _eventsJoined = await _pbService.getEventsJoinedCount(userWithAchievements.id);
     }
   }
 
-  // [BARU] Fungsi untuk mengambil jumlah notifikasi dari service
   Future<void> _fetchUnreadNotificationCount() async {
-    try {
-      final count = await _pbService.getUnreadNotificationCount();
-      if (mounted) {
-        setState(() {
-          _unreadNotificationCount = count;
-        });
-      }
-    } catch (e) {
-      print("Failed to fetch notification count: $e");
-      if (mounted) {
-        setState(() {
-          _unreadNotificationCount = 0;
-        });
-      }
-    }
+    final count = await _pbService.getUnreadNotificationCount();
+    if (mounted) setState(() => _unreadNotificationCount = count);
   }
 
   Future<void> _fetchJoinedEvents() async {
@@ -134,13 +96,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       if (mounted) setState(() => _events = []);
       return;
     }
-
     final joinedEventsResult = await _pbService.fetchJoinedEvents(userId: user.id);
-    if (mounted) {
-      setState(() {
-        _events = joinedEventsResult;
-      });
-    }
+    if (mounted) setState(() => _events = joinedEventsResult);
   }
 
   @override
@@ -150,10 +107,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       body: SafeArea(
         child: IndexedStack(
           index: _bottomNavIndex == 4 ? 1 : 0,
-          children: [
-            _buildHomeContent(),
-            ProfileScreen(fromHomeScreen: true),
-          ],
+          children: [_buildHomeContent(), ProfileScreen(fromHomeScreen: true)],
         ),
       ),
       bottomNavigationBar: _buildBottomNavigationBar(),
@@ -175,23 +129,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 position: _slideAnimation,
                 child: Container(
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Color(0xFF6366F1),
-                        Color(0xFF8B5CF6),
-                      ],
-                    ),
+                    gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)])
                   ),
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(24, 32, 24, 32),
                     child: Column(
-                      children: [
-                        _buildModernHeader(),
-                        SizedBox(height: 32),
-                        _buildModernStatsCards(),
-                      ],
+                      children: [_buildModernHeader(), SizedBox(height: 32), _buildModernStatsCards()],
                     ),
                   ),
                 ),
@@ -204,39 +147,23 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               child: Container(
                 decoration: BoxDecoration(
                   color: Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.only(
-                    topLeft: Radius.circular(24),
-                    topRight: Radius.circular(24),
-                  ),
+                  borderRadius: BorderRadius.only(topLeft: Radius.circular(24), topRight: Radius.circular(24)),
                 ),
                 child: Padding(
                   padding: EdgeInsets.fromLTRB(24, 32, 24, 0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // [URUTAN DIUBAH] Achievements ditampilkan sebelum Quick Actions
+                      if (_achievements.isNotEmpty) _buildAchievementsSection(),
+                      if (_achievements.isNotEmpty) SizedBox(height: 32),
                       _buildQuickAccessButtons(),
                       SizedBox(height: 32),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            'Recent Activities',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF1E293B),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () {},
-                            child: Text(
-                              'View All',
-                              style: TextStyle(
-                                color: Color(0xFF6366F1),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
+                          Text('Recent Activities', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+                          TextButton(onPressed: () {}, child: Text('View All', style: TextStyle(color: Color(0xFF6366F1), fontWeight: FontWeight.w600))),
                         ],
                       ),
                       SizedBox(height: 16),
@@ -247,33 +174,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ),
           ),
           _isLoading
-              ? SliverToBoxAdapter(
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(48.0),
-                      child: Column(
-                        children: [
-                          CircularProgressIndicator(
-                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
-                            strokeWidth: 3,
-                          ),
-                          SizedBox(height: 16),
-                          Text(
-                            'Loading your activities...',
-                            style: TextStyle(
-                              color: Color(0xFF64748B),
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                )
+              ? SliverToBoxAdapter(child: Center(child: Padding(padding: const EdgeInsets.all(48.0), child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1))))))
               : _events.isEmpty
-                  ? SliverToBoxAdapter(
-                      child: _buildEmptyState(),
-                    )
+                  ? SliverToBoxAdapter(child: _buildEmptyState())
                   : SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (context, index) => Padding(
@@ -289,195 +192,92 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // [MODIFIKASI] Header sekarang menggunakan Stack untuk menampilkan badge notifikasi
   Widget _buildModernHeader() {
-    return Row(
-      children: [
+    return Row(children: [
+      Container(
+        decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white.withOpacity(0.3), width: 3), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20, offset: Offset(0, 8))]),
+        child: CircleAvatar(radius: 32, backgroundColor: Colors.white, backgroundImage: _userAvatarUrl != null ? NetworkImage(_userAvatarUrl!) : null, child: _userAvatarUrl == null ? Icon(Icons.person, size: 32, color: Color(0xFF6366F1)) : null),
+      ),
+      SizedBox(width: 20),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Welcome back,', style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 16, fontWeight: FontWeight.w500)),
+        SizedBox(height: 4),
+        Text(_userName, style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+      ])),
+      Stack(clipBehavior: Clip.none, children: [
         Container(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white.withOpacity(0.3), width: 3),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 20,
-                offset: Offset(0, 8),
-              ),
-            ],
-          ),
-          child: CircleAvatar(
-            radius: 32,
-            backgroundColor: Colors.white,
-            backgroundImage: _userAvatarUrl != null ? NetworkImage(_userAvatarUrl!) : null,
-            child: _userAvatarUrl == null
-                ? Icon(Icons.person, size: 32, color: Color(0xFF6366F1))
-                : null,
-          ),
+          decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(16)),
+          child: IconButton(icon: Icon(Icons.notifications_outlined, color: Colors.white, size: 24), onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => NotificationScreen())).then((_) => _fetchUnreadNotificationCount())),
         ),
-        SizedBox(width: 20),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Welcome back,',
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.9),
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              SizedBox(height: 4),
-              Text(
-                _userName,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-        ),
-        // Gunakan Stack untuk menumpuk badge di atas ikon
-        Stack(
-          clipBehavior: Clip.none, // Izinkan badge tampil di luar batas
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: IconButton(
-                icon: Icon(Icons.notifications_outlined, color: Colors.white, size: 24),
-                onPressed: () {
-                  // Saat diklik, navigasi ke halaman notifikasi lalu muat ulang count
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => NotificationScreen()),
-                  ).then((_) {
-                    // Setelah kembali dari halaman notifikasi, perbarui angkanya
-                    _fetchUnreadNotificationCount();
-                  });
-                },
-              ),
+        if (_unreadNotificationCount > 0)
+          Positioned(
+            top: -4, right: -4,
+            child: Container(
+              padding: EdgeInsets.all(2),
+              decoration: BoxDecoration(color: Colors.red, shape: BoxShape.circle, border: Border.all(color: Color(0xFF8B5CF6), width: 2)),
+              constraints: BoxConstraints(minWidth: 20, minHeight: 20),
+              child: Center(child: Text('$_unreadNotificationCount', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold))),
             ),
-            // Tampilkan badge hanya jika ada notifikasi yang belum dibaca
-            if (_unreadNotificationCount > 0)
-              Positioned(
-                top: -4,
-                right: -4,
-                child: Container(
-                  padding: EdgeInsets.all(2),
-                  decoration: BoxDecoration(
-                    color: Colors.red,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Color(0xFF8B5CF6), width: 2),
-                  ),
-                  constraints: BoxConstraints(
-                    minWidth: 20,
-                    minHeight: 20,
-                  ),
-                  child: Center(
-                    child: Text(
-                      '$_unreadNotificationCount',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ],
-    );
+          ),
+      ]),
+    ]);
   }
 
   Widget _buildModernStatsCards() {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildModernStatCard(
-            'Total Points',
-            _userPoints.toString(),
-            Icons.star_rounded,
-            Color(0xFFFBBF24),
-            Color(0xFFFEF3C7),
-          ),
-        ),
-        SizedBox(width: 16),
-        Expanded(
-          child: _buildModernStatCard(
-            'Events Joined',
-            _eventsJoined.toString(),
-            Icons.event_available_rounded,
-            Color(0xFF10B981),
-            Color(0xFFD1FAE5),
-          ),
-        ),
-      ],
-    );
+    return Row(children: [
+      Expanded(child: _buildModernStatCard('Total Points', _userPoints.toString(), Icons.star_rounded, Color(0xFFFBBF24), Color(0xFFFEF3C7))),
+      SizedBox(width: 16),
+      Expanded(child: _buildModernStatCard('Events Joined', _eventsJoined.toString(), Icons.event_available_rounded, Color(0xFF10B981), Color(0xFFD1FAE5))),
+    ]);
   }
 
   Widget _buildModernStatCard(String title, String value, IconData icon, Color iconColor, Color bgColor) {
     return Container(
       padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 20,
-            offset: Offset(0, 8),
-          ),
-        ],
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 20, offset: Offset(0, 8))]),
+      child: Column(children: [
+        Container(width: 48, height: 48, decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(16)), child: Icon(icon, color: iconColor, size: 24)),
+        SizedBox(height: 12),
+        _isLoading ? Container(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation<Color>(iconColor))) : Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+        SizedBox(height: 4),
+        Text(title, style: TextStyle(fontSize: 13, color: Color(0xFF64748B), fontWeight: FontWeight.w500), textAlign: TextAlign.center),
+      ]),
+    );
+  }
+
+  Widget _buildAchievementsSection() {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Your Achievements', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+      SizedBox(height: 16),
+      Container(
+        height: 140,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          physics: BouncingScrollPhysics(),
+          itemCount: _achievements.length,
+          itemBuilder: (context, index) => _buildAchievementCard(_achievements[index]),
+        ),
       ),
-      child: Column(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: bgColor,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Icon(icon, color: iconColor, size: 24),
-          ),
-          SizedBox(height: 12),
-          _isLoading
-              ? Container(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(iconColor),
-                  ),
-                )
-              : Text(
-                  value,
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1E293B),
-                  ),
-                ),
-          SizedBox(height: 4),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 13,
-              color: Color(0xFF64748B),
-              fontWeight: FontWeight.w500,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
+    ]);
+  }
+
+  Widget _buildAchievementCard(RecordModel achievement) {
+    final name = achievement.getStringValue('badge_name', 'Unknown');
+    final iconFile = achievement.getStringValue('icon');
+    final iconUrl = _pbService.getFileUrl(achievement, iconFile);
+    return Container(
+      width: 110,
+      margin: EdgeInsets.only(right: 16),
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: Offset(0, 4))], border: Border.all(color: Colors.grey.shade200)),
+      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        if (iconUrl != null)
+          Image.network(iconUrl, height: 60, width: 60, fit: BoxFit.contain, errorBuilder: (context, error, stackTrace) => Icon(Icons.shield, size: 50, color: Colors.grey))
+        else
+          Icon(Icons.shield, size: 50, color: Colors.grey),
+        SizedBox(height: 12),
+        Text(name, textAlign: TextAlign.center, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF374151)), maxLines: 2, overflow: TextOverflow.ellipsis),
+      ]),
     );
   }
 
