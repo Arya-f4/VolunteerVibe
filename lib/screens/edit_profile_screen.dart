@@ -1,5 +1,3 @@
-// File: lib/screens/edit_profile_screen.dart
-
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -25,14 +23,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final ImagePicker _picker = ImagePicker();
 
   File? _imageFile;
-  bool _isUploading = false;
-  String? _newAvatarUrl;
+  bool _isSaving = false;
 
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.currentName);
-    _newAvatarUrl = widget.currentAvatarUrl;
   }
 
   @override
@@ -42,7 +38,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _pickImage() async {
-    final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery);
+    final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
     if (pickedFile != null) {
       setState(() {
         _imageFile = File(pickedFile.path);
@@ -51,34 +47,29 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _saveProfile() async {
-    if (_isUploading) return;
+    if (_isSaving) return;
     
-    setState(() => _isUploading = true);
+    setState(() => _isSaving = true);
 
     try {
-      await _pbService.updateUserProfile(
+      // [MODIFIKASI] Panggil fungsi updateProfile yang baru dan lebih sederhana
+      await _pbService.updateProfile(
         name: _nameController.text.trim(),
         avatarFile: _imageFile,
       );
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Profile updated successfully!'),
-          backgroundColor: Colors.green,
-        ),
+        SnackBar(content: Text('Profile updated successfully!'), backgroundColor: Colors.green),
       );
       Navigator.pop(context, true); 
 
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to update profile: $e'),
-          backgroundColor: Colors.red,
-        ),
+        SnackBar(content: Text('Failed to update profile: $e'), backgroundColor: Colors.red),
       );
     } finally {
       if(mounted) {
-        setState(() => _isUploading = false);
+        setState(() => _isSaving = false);
       }
     }
   }
@@ -88,11 +79,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Edit Profile'),
+        elevation: 1,
         actions: [
-          _isUploading
+          _isSaving
               ? Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                  padding: const EdgeInsets.only(right: 16.0),
+                  child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
                 )
               : TextButton(
                   onPressed: _saveProfile,
@@ -110,17 +102,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             SizedBox(height: 48),
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isUploading ? null : _saveProfile,
+              child: ElevatedButton.icon(
+                onPressed: _isSaving ? null : _saveProfile,
                 style: ElevatedButton.styleFrom(
                   padding: EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   backgroundColor: Color(0xFF6C63FF),
                   foregroundColor: Colors.white,
                 ),
-                child: _isUploading
-                  ? Text("Saving...")
-                  : Text('Save Changes', style: TextStyle(fontSize: 16)),
+                icon: _isSaving ? SizedBox.shrink() : Icon(Icons.save, size: 20),
+                label: _isSaving
+                    ? SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white))
+                    : Text('Save Changes', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
               ),
             )
           ],
@@ -133,10 +126,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     ImageProvider? backgroundImage;
     if (_imageFile != null) {
       backgroundImage = FileImage(_imageFile!);
-    } else if (_newAvatarUrl != null && _newAvatarUrl!.isNotEmpty) {
-      backgroundImage = NetworkImage(_newAvatarUrl!);
+    } else if (widget.currentAvatarUrl != null) {
+      backgroundImage = NetworkImage(widget.currentAvatarUrl!);
     }
-
     return Center(
       child: Stack(
         children: [
@@ -144,9 +136,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             radius: 60,
             backgroundColor: Colors.grey.shade200,
             backgroundImage: backgroundImage,
-            child: backgroundImage == null
-                ? Icon(Icons.person, size: 60, color: Colors.grey.shade400)
-                : null,
+            child: backgroundImage == null ? Icon(Icons.person_outline, size: 60, color: Colors.grey.shade400) : null,
           ),
           Positioned(
             bottom: 0,
@@ -155,7 +145,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               onTap: _pickImage,
               child: CircleAvatar(
                 radius: 22,
-                backgroundColor: Theme.of(context).primaryColor, 
+                backgroundColor: Color(0xFF6C63FF), 
                 child: Icon(Icons.edit, color: Colors.white, size: 22),
               ),
             ),
@@ -169,18 +159,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     return TextFormField(
       controller: _nameController,
       decoration: InputDecoration(
-        labelText: 'Full Name',
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        labelText: 'Full Name / Organization Name',
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         prefixIcon: Icon(Icons.person_outline),
       ),
-      validator: (value) {
-        if (value == null || value.isEmpty) {
-          return 'Please enter your name';
-        }
-        return null;
-      },
+      validator: (value) => (value == null || value.trim().isEmpty) ? 'Name cannot be empty' : null,
     );
   }
 }

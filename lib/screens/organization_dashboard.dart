@@ -240,9 +240,6 @@ class _OrganizationDashboardState extends State<OrganizationDashboard> with Tick
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               _buildCompactNavItem(Icons.home_rounded, 'Home', 0),
-              _buildCompactNavItem(Icons.search_rounded, 'Search', 1),
-              _buildCompactNavItem(Icons.emoji_events_rounded, 'Rewards', 2),
-              _buildCompactNavItem(Icons.schedule_rounded, 'Hours', 3),
               _buildCompactNavItem(Icons.person_rounded, 'Profile', 4),
             ],
           ),
@@ -263,16 +260,6 @@ class _OrganizationDashboardState extends State<OrganizationDashboard> with Tick
 
           switch (index) {
             case 0:
-              // Sudah di halaman ini
-              break;
-            case 1:
-              Navigator.push(context, MaterialPageRoute(builder: (context) => SearchScreen()));
-              break;
-            case 2:
-              Navigator.push(context, MaterialPageRoute(builder: (context) => GamificationScreen()));
-              break;
-            case 3:
-              Navigator.push(context, MaterialPageRoute(builder: (context) => VolunteerHoursScreen()));
               break;
             case 4:
               Navigator.push(context, MaterialPageRoute(builder: (context) => ProfileScreen()));

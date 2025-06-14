@@ -21,6 +21,8 @@ class EmptyEventsState extends StatelessWidget {
         ],
       ),
       child: Column(
+        // [PERBAIKAN] Tambahkan baris ini untuk menengahkan semua konten
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
             width: 80,

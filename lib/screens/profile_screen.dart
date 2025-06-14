@@ -4,9 +4,9 @@ import 'package:volunteervibe/services/pocketbase_service.dart';
 import 'package:volunteervibe/screens/search_screen.dart';
 import 'package:volunteervibe/screens/gamification_screen.dart';
 import 'package:volunteervibe/screens/volunteer_hours_screen.dart';
-import 'package:volunteervibe/screens/organization_register_screen.dart';
 import 'package:volunteervibe/auth/login_page.dart';
 import 'package:volunteervibe/screens/edit_profile_screen.dart';
+import 'package:volunteervibe/screens/organization_dashboard.dart';
 
 class ProfileScreen extends StatefulWidget {
   final bool fromHomeScreen;
@@ -23,7 +23,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final PocketBaseService _pbService = PocketBaseService();
 
-  int _bottomNavIndex = 4; // 4 adalah index untuk Profile
+  int _bottomNavIndex = 4;
 
   bool _isLoading = true;
   String _userName = 'Guest';
@@ -31,9 +31,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? _userAvatarUrl;
   int _userPoints = 0;
   int _eventsJoined = 0;
+  bool _userEmailVisibility = false;
 
   List<RecordModel> _allPossibleAchievements = [];
   List<String> _earnedAchievementIds = [];
+
+  bool get isOrganizer {
+    final user = _pbService.getCurrentUser();
+    return user != null && (user.collectionName == 'organization' || user.data['is_organization'] == true);
+  }
 
   @override
   void initState() {
@@ -44,7 +50,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadProfileData() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
-
     try {
       final userRecord = await _pbService.fetchCurrentUserWithAchievements();
       final allAchievements = await _pbService.fetchAllAchievements();
@@ -54,6 +59,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _userName = userRecord.getStringValue('name', 'Guest');
           _userEmail = userRecord.getStringValue('email', 'no-email@example.com');
           _userPoints = userRecord.getIntValue('points', 0);
+          _userEmailVisibility = userRecord.getBoolValue('emailVisibility');
           final avatarFilename = userRecord.getStringValue('avatar');
           if (avatarFilename.isNotEmpty) {
             _userAvatarUrl = _pbService.getFileUrl(userRecord, avatarFilename);
@@ -63,7 +69,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _earnedAchievementIds = userRecord.getListValue<String>('achievment_id');
           _eventsJoined = await _pbService.getEventsJoinedCount(userRecord.id);
         }
-        
         _allPossibleAchievements = allAchievements;
       }
     } catch (e) {
@@ -116,11 +121,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     children: [
                       _buildProfileHeader(),
                       SizedBox(height: 32),
-                      _buildStatsSection(),
-                      SizedBox(height: 32),
-                      _buildAchievementsSection(),
-                      SizedBox(height: 32),
-                      _buildOptions(context)
+                      if (!isOrganizer) _buildStatsSection(),
+                      if (!isOrganizer) SizedBox(height: 32),
+                      if (!isOrganizer) _buildAchievementsSection(),
+                      if (!isOrganizer) SizedBox(height: 32),
+                      _buildOptions(context),
+                      if (isOrganizer) SizedBox(height: 24),
+                      if (isOrganizer) _buildOrganizerDashboardButton(context),
                     ],
                   ),
                 ),
@@ -160,11 +167,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildStatsSection() {
     return Container(
       padding: EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: Offset(0, 5))],
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: Offset(0, 5))]),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -196,30 +199,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildAchievementsSection() {
     return Container(
       padding: EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: Offset(0, 5))],
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: Offset(0, 5))]),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Text('Achievements', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
-              Spacer(),
-              Text('${_earnedAchievementIds.length}/${_allPossibleAchievements.length} earned', style: TextStyle(color: Color(0xFF718096), fontSize: 14)),
-            ],
-          ),
+          Row(children: [
+            Text('Achievements', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
+            Spacer(),
+            Text('${_earnedAchievementIds.length}/${_allPossibleAchievements.length} earned', style: TextStyle(color: Color(0xFF718096), fontSize: 14)),
+          ]),
           SizedBox(height: 20),
           GridView.builder(
             shrinkWrap: true,
             physics: NeverScrollableScrollPhysics(),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4, 
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-            ),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, crossAxisSpacing: 16, mainAxisSpacing: 16),
             itemCount: _allPossibleAchievements.length,
             itemBuilder: (context, index) {
               final achievement = _allPossibleAchievements[index];
@@ -236,7 +229,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final String name = achievement.getStringValue('badge_name');
     final String description = achievement.getStringValue('description');
     final String iconUrl = _pbService.getFileUrl(achievement, achievement.getStringValue('icon')) ?? '';
-
     final Color unearnedColor = Colors.grey.shade400;
     final Color earnedColor = Color(0xFF6C63FF);
 
@@ -254,12 +246,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               radius: 30,
               backgroundColor: isEarned ? earnedColor.withOpacity(0.15) : unearnedColor.withOpacity(0.15),
               child: iconUrl.isNotEmpty
-                  ? Image.network(
-                      iconUrl,
-                      width: 32,
-                      height: 32,
-                      errorBuilder: (context, error, stackTrace) => Icon(Icons.shield, color: isEarned ? earnedColor : unearnedColor),
-                    )
+                  ? Image.network(iconUrl, width: 32, height: 32, errorBuilder: (context, error, stackTrace) => Icon(Icons.shield, color: isEarned ? earnedColor : unearnedColor))
                   : Icon(Icons.shield, color: isEarned ? earnedColor : unearnedColor),
             ),
           ],
@@ -271,17 +258,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildOptions(BuildContext context) {
     return Container(
       padding: EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: Offset(0, 5))],
-      ),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: Offset(0, 5))]),
       child: Column(
         children: [
           _buildProfileOption(context, 'Edit Profile', Icons.edit_outlined),
-          _buildProfileOption(context, 'Register as Organization', Icons.business),
           _buildProfileOption(context, 'Logout', Icons.logout, isLogout: true),
         ],
+      ),
+    );
+  }
+
+  Widget _buildOrganizerDashboardButton(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        icon: Icon(Icons.dashboard_customize),
+        label: Text('Go to My Dashboard'),
+        onPressed: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) => OrganizationDashboard()));
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Color(0xFF6C63FF),
+          foregroundColor: Colors.white,
+          padding: EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
       ),
     );
   }
@@ -295,8 +296,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         if (isLogout) {
           _pbService.logout();
           Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (context) => LoginPage()), (route) => false);
-        } else if (title == 'Register as Organization') {
-          Navigator.push(context, MaterialPageRoute(builder: (context) => OrganizationRegisterScreen()));
         } else if (title == 'Edit Profile') {
           final bool? profileUpdated = await Navigator.push(
             context,
@@ -316,29 +315,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildBottomNavigationBar() {
+    final List<Map<String, dynamic>> userNavItems = [
+      {'icon': Icons.home_rounded, 'label': 'Home', 'index': 0},
+      {'icon': Icons.search_rounded, 'label': 'Search', 'index': 1},
+      {'icon': Icons.emoji_events_rounded, 'label': 'Rewards', 'index': 2},
+      {'icon': Icons.schedule_rounded, 'label': 'Hours', 'index': 3},
+      {'icon': Icons.person_rounded, 'label': 'Profile', 'index': 4},
+    ];
+    
+    final List<Map<String, dynamic>> orgNavItems = [
+      {'icon': Icons.home_rounded, 'label': 'Dashboard', 'index': 0},
+      {'icon': Icons.person_rounded, 'label': 'Profile', 'index': 4},
+    ];
+
+    final navItemsToShow = isOrganizer ? orgNavItems : userNavItems;
+    _bottomNavIndex = 4;
+
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 20,
-            offset: Offset(0, -5),
-          ),
-        ],
-      ),
+      decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: Offset(0, -5))]),
       child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildCompactNavItem(Icons.home_rounded, 'Home', 0),
-              _buildCompactNavItem(Icons.search_rounded, 'Search', 1),
-              _buildCompactNavItem(Icons.emoji_events_rounded, 'Rewards', 2),
-              _buildCompactNavItem(Icons.schedule_rounded, 'Hours', 3),
-              _buildCompactNavItem(Icons.person_rounded, 'Profile', 4),
-            ],
+            children: navItemsToShow.map((item) {
+              return _buildCompactNavItem(item['icon'], item['label'], item['index']);
+            }).toList(),
           ),
         ),
       ),
@@ -354,47 +356,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
       child: GestureDetector(
         onTap: () {
           if (isActive) return;
-
           switch (index) {
             case 0:
-              Navigator.popUntil(context, (route) => route.isFirst);
+              if (isOrganizer) {
+                 Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => OrganizationDashboard()));
+              } else {
+                 Navigator.popUntil(context, (route) => route.isFirst);
+              }
               break;
-            case 1:
-              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => SearchScreen()));
-              break;
-            case 2:
-              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => GamificationScreen()));
-              break;
-            case 3:
-              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => VolunteerHoursScreen()));
-              break;
-            case 4:
-              // Already on the Profile screen
-              break;
+            case 1: Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => SearchScreen())); break;
+            case 2: Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => GamificationScreen())); break;
+            case 3: Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => VolunteerHoursScreen())); break;
+            case 4: break;
           }
         },
         child: Container(
           padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-          decoration: BoxDecoration(
-            color: isActive ? activeColor.withOpacity(0.1) : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-          ),
+          decoration: BoxDecoration(color: isActive ? activeColor.withOpacity(0.1) : Colors.transparent, borderRadius: BorderRadius.circular(12)),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                icon,
-                color: isActive ? activeColor : inactiveColor,
-                size: 24,
-              ),
+              Icon(icon, color: isActive ? activeColor : inactiveColor, size: 24),
               SizedBox(height: 4),
               Text(
                 label,
-                style: TextStyle(
-                  color: isActive ? activeColor : inactiveColor,
-                  fontSize: 11,
-                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-                ),
+                style: TextStyle(color: isActive ? activeColor : inactiveColor, fontSize: 11, fontWeight: isActive ? FontWeight.w600 : FontWeight.w500),
                 overflow: TextOverflow.ellipsis,
                 maxLines: 1,
               ),

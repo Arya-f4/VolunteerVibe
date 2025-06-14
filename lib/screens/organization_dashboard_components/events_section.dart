@@ -31,14 +31,6 @@ class EventsSection extends StatelessWidget {
               ),
             ),
             Spacer(),
-            TextButton.icon(
-              onPressed: onViewAll,
-              icon: Icon(Icons.arrow_forward, size: 16),
-              label: Text('View All'),
-              style: TextButton.styleFrom(
-                foregroundColor: Color(0xFF6C63FF),
-              ),
-            ),
           ],
         ),
         SizedBox(height: 16),

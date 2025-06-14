@@ -28,14 +28,12 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> {
   final LocationService _locationService = LocationService();
   final MapController _mapController = MapController();
   
-  // Controllers
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _maxParticipantController = TextEditingController();
   final _pointsController = TextEditingController();
   final _durationController = TextEditingController();
 
-  // State
   int _currentStep = 0;
   bool _isLoading = false;
   DateTime _selectedDate = DateTime.now().add(Duration(days: 1));
@@ -44,7 +42,7 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> {
   List<RecordModel> _fetchedCategories = [];
   String? _selectedCategoryId;
   
-  latlng.LatLng _selectedLocation = latlng.LatLng(-7.2575, 112.7521); // Default: Surabaya
+  latlng.LatLng _selectedLocation = latlng.LatLng(-6.2088, 106.8456);
   String _locationAddress = "Memuat lokasi...";
 
   @override
@@ -54,8 +52,12 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> {
   }
   
   void _initializeData() async {
+    setState(() => _isLoading = true);
     await _loadCategories();
     await _initializeLocation();
+    if(mounted) {
+      setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -72,11 +74,7 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> {
 
   Future<void> _loadCategories() async {
     final categories = await _pbService.fetchEventCategories();
-    if (mounted) {
-      setState(() {
-        _fetchedCategories = categories;
-      });
-    }
+    if (mounted) setState(() => _fetchedCategories = categories);
   }
 
   Future<void> _initializeLocation() async {
@@ -90,7 +88,6 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> {
         _mapController.move(_selectedLocation, 15.0);
       }
     } catch (e) {
-      print("Could not get current location: $e");
       if (mounted) {
         setState(() {
           _locationAddress = "Gagal mendapatkan lokasi, gunakan default.";
@@ -105,6 +102,103 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> {
       _locationAddress = "${location.latitude.toStringAsFixed(5)}, ${location.longitude.toStringAsFixed(5)}";
     });
     _mapController.move(location, _mapController.camera.zoom);
+  }
+  
+  void _showAddCategoryDialog() {
+    final TextEditingController categoryController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Create New Category'),
+          content: Form(
+            key: formKey,
+            child: TextFormField(
+              controller: categoryController,
+              decoration: InputDecoration(labelText: 'Category Name', border: OutlineInputBorder()),
+              validator: (value) => (value == null || value.trim().isEmpty) ? 'Name cannot be empty' : null,
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel')),
+            ElevatedButton(
+              onPressed: () async {
+                if (formKey.currentState!.validate()) {
+                  Navigator.pop(context);
+                  await _createNewCategory(categoryController.text.trim());
+                }
+              },
+              child: Text('Create'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _createNewCategory(String name) async {
+    setState(() => _isLoading = true);
+    try {
+      final newCategory = await _pbService.createEventCategory(name);
+      if (newCategory != null) {
+        await _loadCategories();
+        setState(() => _selectedCategoryId = newCategory.id);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Category "$name" created!'), backgroundColor: Colors.green));
+      } else {
+        throw Exception("Failed to create category or it already exists.");
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString()), backgroundColor: Colors.red));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _createEvent() async {
+    if (!_formKey.currentState!.validate() || _selectedCategoryId == null) return;
+    
+    setState(() => _isLoading = true);
+    try {
+      final eventDateTime = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, _selectedTime.hour, _selectedTime.minute);
+      
+      final body = <String, dynamic>{
+        "title": _titleController.text,
+        "description": _descriptionController.text,
+        "date": eventDateTime.toIso8601String(),
+        
+        // [PERBAIKAN] Mengirim lokasi sebagai objek Map, bukan String.
+        "location": {
+          "lat": _selectedLocation.latitude,
+          "lon": _selectedLocation.longitude
+        },
+
+        "max_participant": int.tryParse(_maxParticipantController.text) ?? 0,
+        "point_event": int.tryParse(_pointsController.text) ?? 0,
+        "duration_hours": int.tryParse(_durationController.text) ?? 0,
+        "organization_id": widget.organization.id,
+        "categories_id": _selectedCategoryId,
+      };
+
+      final record = await _pbService.createEvent(body: body);
+
+      if (record != null) {
+        Navigator.pop(context);
+        widget.onEventCreated();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Event created successfully!'), backgroundColor: Color(0xFF10B981), behavior: SnackBarBehavior.floating),
+        );
+      } else {
+        throw Exception('Failed to create event record.');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal membuat event: Periksa kembali format input Anda.'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
+      );
+    } finally {
+      if(mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
@@ -136,6 +230,8 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> {
       ),
     );
   }
+
+  // ... (Sisa kode tidak ada yang berubah, saya sertakan untuk kelengkapan)
 
   Widget _buildHeader() {
     return Container(
@@ -208,7 +304,6 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> {
             label: 'Description',
             hint: 'Describe what volunteers will do',
             icon: Icons.description,
-            maxLines: 4,
             validator: (value) => value == null || value.isEmpty ? 'Description is required' : null,
           ),
           SizedBox(height: 20),
@@ -308,15 +403,7 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> {
     );
   }
 
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    String? hint,
-    required IconData icon,
-    int maxLines = 1,
-    TextInputType? keyboardType,
-    String? Function(String?)? validator,
-  }) {
+  Widget _buildTextField({ required TextEditingController controller, required String label, String? hint, required IconData icon, int maxLines = 1, TextInputType? keyboardType, String? Function(String?)? validator,}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -382,22 +469,33 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> {
       children: [
         Text('Category', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF4A5568))),
         SizedBox(height: 12),
-        if (_fetchedCategories.isEmpty)
-          Center(child: CircularProgressIndicator(color: Color(0xFF6C63FF)))
+        if (_fetchedCategories.isEmpty && _isLoading)
+          Center(child: CircularProgressIndicator())
         else
-          DropdownButtonFormField<String>(
-            value: _selectedCategoryId,
-            hint: Text('Select a category'),
-            items: _fetchedCategories.map((category) => DropdownMenuItem<String>(
-              value: category.id,
-              child: Text(category.getStringValue('name')),
-            )).toList(),
-            onChanged: (value) => setState(() => _selectedCategoryId = value),
-            validator: (value) => value == null ? 'Category is required' : null,
-            decoration: InputDecoration(
-              prefixIcon: Icon(Icons.category, color: Color(0xFF718096)),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Color(0xFFE2E8F0))),
-            ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ..._fetchedCategories.map((category) {
+                final isSelected = _selectedCategoryId == category.id;
+                return ChoiceChip(
+                  label: Text(category.getStringValue('name')),
+                  selected: isSelected,
+                  onSelected: (selected) => setState(() => _selectedCategoryId = selected ? category.id : null),
+                  selectedColor: Color(0xFF6C63FF),
+                  labelStyle: TextStyle(color: isSelected ? Colors.white : Color(0xFF4A5568)),
+                  backgroundColor: Colors.white,
+                  shape: StadiumBorder(side: BorderSide(color: isSelected ? Color(0xFF6C63FF) : Color(0xFFE2E8F0))),
+                );
+              }).toList(),
+              ActionChip(
+                avatar: Icon(Icons.add, size: 18, color: Color(0xFF6C63FF)),
+                label: Text('Add New'),
+                onPressed: _showAddCategoryDialog,
+                backgroundColor: Colors.white,
+                shape: StadiumBorder(side: BorderSide(color: Color(0xFFE2E8F0))),
+              ),
+            ],
           ),
       ],
     );
@@ -548,44 +646,5 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> {
   Future<void> _selectTime() async {
     final pickedTime = await showTimePicker(context: context, initialTime: _selectedTime, builder: (context, child) => Theme(data: Theme.of(context).copyWith(colorScheme: ColorScheme.light(primary: Color(0xFF6C63FF))), child: child!));
     if (pickedTime != null) setState(() => _selectedTime = pickedTime);
-  }
-
-  Future<void> _createEvent() async {
-    if (!_formKey.currentState!.validate() || _selectedCategoryId == null) return;
-    
-    setState(() => _isLoading = true);
-    try {
-      final eventDateTime = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, _selectedTime.hour, _selectedTime.minute);
-      
-      final body = <String, dynamic>{
-        "title": _titleController.text,
-        "description": _descriptionController.text,
-        "date": eventDateTime.toIso8601String(),
-        "location": "${_selectedLocation.latitude},${_selectedLocation.longitude}",
-        "max_participant": int.tryParse(_maxParticipantController.text) ?? 0,
-        "point_event": int.tryParse(_pointsController.text) ?? 0,
-        "duration_hours": int.tryParse(_durationController.text) ?? 0,
-        "organization_id": widget.organization.id,
-        "categories_id": _selectedCategoryId,
-      };
-
-      final record = await _pbService.createEvent(body: body);
-
-      if (record != null) {
-        Navigator.pop(context);
-        widget.onEventCreated();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Event created successfully!'), backgroundColor: Color(0xFF10B981), behavior: SnackBarBehavior.floating),
-        );
-      } else {
-        throw Exception('Failed to create event record.');
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal membuat event: Periksa kembali format input Anda.'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
-      );
-    } finally {
-      if(mounted) setState(() => _isLoading = false);
-    }
   }
 }

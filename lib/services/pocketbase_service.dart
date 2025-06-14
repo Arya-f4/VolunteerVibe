@@ -148,37 +148,122 @@ class PocketBaseService {
     }
   }
 
-  Future<void> updateUserProfile({String? name, String? email, File? avatarFile}) async {
+  // Future<void> updateUserProfile({String? name, String? email, File? avatarFile}) async {
+  //   final currentUser = pb.authStore.model;
+  //   if (currentUser == null) {
+  //     throw Exception("No authenticated user found.");
+  //   }
+
+  //   final body = <String, dynamic>{};
+  //   if (name != null) {
+  //     body['name'] = name;
+  //     print('PocketBaseService: Attempting to update name to: $name');
+  //   }
+  //   if (email != null) {
+  //     body['email'] = email;
+  //     print('PocketBaseService: Attempting to update email to: $email');
+  //   }
+
+  //   List<http.MultipartFile> files = [];
+  //   if (avatarFile != null) {
+  //     files.add(await http.MultipartFile.fromPath('avatar', avatarFile.path));
+  //     print('PocketBaseService: Attempting to upload new avatar from path: ${avatarFile.path}');
+  //   }
+
+  //   try {
+  //     final updatedRecord = await pb.collection('users').update(currentUser.id, body: body, files: files);
+  //     print('PocketBaseService: User profile updated successfully in PocketBase. New name: ${updatedRecord.getStringValue('name')}, New email: ${updatedRecord.getStringValue('email')}, New avatar filename: ${updatedRecord.getStringValue('avatar')}');
+  //     await pb.collection('users').authRefresh();
+  //   } catch (e) {
+  //     print('PocketBaseService: FAILED to update user profile: $e');
+  //     throw Exception("Failed to update profile: $e");
+  //   }
+  // }
+
+    Future<void> updateUserProfile({
+    String? name, 
+    String? email, 
+    File? avatarFile,
+    bool? emailVisibility,
+  }) async {
     final currentUser = pb.authStore.model;
-    if (currentUser == null) {
-      throw Exception("No authenticated user found.");
-    }
+    if (currentUser == null) throw Exception("No authenticated user found.");
 
     final body = <String, dynamic>{};
-    if (name != null) {
-      body['name'] = name;
-      print('PocketBaseService: Attempting to update name to: $name');
-    }
+    if (name != null) body['name'] = name;
+    
+    // [PERBAIKAN UTAMA ADA DI SINI]
+    // Jika ada perubahan email, kita kirim email dan emailConfirm bersamaan
     if (email != null) {
       body['email'] = email;
-      print('PocketBaseService: Attempting to update email to: $email');
+      body['emailConfirm'] = email; // Baris ini yang akan menyelesaikan masalah
     }
+    
+    if (emailVisibility != null) body['emailVisibility'] = emailVisibility;
 
     List<http.MultipartFile> files = [];
     if (avatarFile != null) {
       files.add(await http.MultipartFile.fromPath('avatar', avatarFile.path));
-      print('PocketBaseService: Attempting to upload new avatar from path: ${avatarFile.path}');
     }
 
     try {
-      final updatedRecord = await pb.collection('users').update(currentUser.id, body: body, files: files);
-      print('PocketBaseService: User profile updated successfully in PocketBase. New name: ${updatedRecord.getStringValue('name')}, New email: ${updatedRecord.getStringValue('email')}, New avatar filename: ${updatedRecord.getStringValue('avatar')}');
+      await pb.collection('users').update(currentUser.id, body: body, files: files);
       await pb.collection('users').authRefresh();
     } catch (e) {
       print('PocketBaseService: FAILED to update user profile: $e');
       throw Exception("Failed to update profile: $e");
     }
   }
+
+  Future<void> updateProfile({
+    String? name, 
+    File? avatarFile,
+  }) async {
+    final currentUser = pb.authStore.model;
+    if (currentUser == null) throw Exception("No authenticated user found.");
+
+    // [LOGIKA BARU] Dapatkan nama koleksi dari user yang sedang login
+    final collectionName = currentUser.collectionName;
+
+    final body = <String, dynamic>{};
+    if (name != null) body['name'] = name;
+
+    List<http.MultipartFile> files = [];
+    if (avatarFile != null) {
+      files.add(await http.MultipartFile.fromPath('avatar', avatarFile.path));
+    }
+
+    try {
+      // Gunakan nama koleksi dinamis
+      await pb.collection(collectionName).update(currentUser.id, body: body, files: files);
+      await pb.collection(collectionName).authRefresh();
+      print('PocketBaseService: Profile updated successfully in collection "$collectionName"');
+    } catch (e) {
+      print('PocketBaseService: FAILED to update profile: $e');
+      throw Exception("Failed to update profile: $e");
+    }
+  }
+
+  Future<void> requestVerification() async {
+    final user = getCurrentUser();
+    if (user == null) throw Exception("User not logged in");
+
+    final userEmail = user.getStringValue('email');
+    if (userEmail.isEmpty) {
+      throw Exception("User email is empty, cannot request verification.");
+    }
+
+    try {
+      await pb.collection('users').requestVerification(userEmail);
+      print('Verification email requested for $userEmail');
+    } catch (e) {
+      print('Error requesting verification: $e');
+      throw Exception('Failed to request verification email.');
+    }
+  }
+  
+ 
+
 
   Future<int> getUserSharedCount() async {
     final currentUser = pb.authStore.model;
@@ -656,6 +741,26 @@ class PocketBaseService {
 
     print('[DEBUG] Peta waiting counts final: $counts');
     return counts;
+  }
+
+  Future<RecordModel?> createEventCategory(String name) async {
+    try {
+      // Pastikan tidak ada kategori dengan nama yang sama (opsional, tergantung aturan DB Anda)
+      final existing = await pb.collection('event_categories').getFullList(
+        filter: 'name = "$name"'
+      );
+      if (existing.isNotEmpty) {
+        throw Exception('Category with this name already exists.');
+      }
+
+      final body = <String, dynamic>{"name": name};
+      final record = await pb.collection('event_categories').create(body: body);
+      return record;
+    } catch (e) {
+      print('Error creating event category: $e');
+      // Kembalikan null jika gagal, atau lempar error lagi jika ingin ditangani di UI
+      return null; 
+    }
   }
 
 }

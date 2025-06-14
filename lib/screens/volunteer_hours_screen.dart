@@ -6,6 +6,9 @@ import 'package:volunteervibe/screens/search_screen.dart';
 import 'package:volunteervibe/screens/gamification_screen.dart';
 import 'package:volunteervibe/screens/profile_screen.dart';
 
+// Enum untuk mengelola state filter status dengan lebih bersih
+enum StatusFilter { all, verified, pending }
+
 class VolunteerHoursScreen extends StatefulWidget {
   @override
   _VolunteerHoursScreenState createState() => _VolunteerHoursScreenState();
@@ -16,10 +19,12 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
   int _bottomNavIndex = 3;
 
   bool _isLoading = true;
-  List<RecordModel> _hourLogs = [];
+  List<RecordModel> _hourLogs = []; // Ini adalah master list dari semua log
 
   String _selectedPeriod = 'This Month';
   final List<String> _periods = ['This Week', 'This Month', 'This Year', 'All Time'];
+  
+  StatusFilter _statusFilter = StatusFilter.all; // State untuk filter status
 
   @override
   void initState() {
@@ -46,8 +51,51 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
     }
   }
 
+  List<RecordModel> _getFilteredLogs() {
+    final now = DateTime.now();
+    List<RecordModel> periodFilteredLogs;
+
+    // Langkah 1: Filter berdasarkan Periode Waktu
+    switch (_selectedPeriod) {
+      case 'This Week':
+        final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+        final startOfWeekDate = DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
+        periodFilteredLogs = _hourLogs.where((log) {
+          final eventDate = DateTime.parse(log.expand['event_id']!.first.getStringValue('date'));
+          return eventDate.isAfter(startOfWeekDate.subtract(Duration(days: 1)));
+        }).toList();
+        break;
+      case 'This Month':
+        periodFilteredLogs = _hourLogs.where((log) {
+          final eventDate = DateTime.parse(log.expand['event_id']!.first.getStringValue('date'));
+          return eventDate.year == now.year && eventDate.month == now.month;
+        }).toList();
+        break;
+      case 'This Year':
+        periodFilteredLogs = _hourLogs.where((log) {
+          final eventDate = DateTime.parse(log.expand['event_id']!.first.getStringValue('date'));
+          return eventDate.year == now.year;
+        }).toList();
+        break;
+      case 'All Time':
+      default:
+        periodFilteredLogs = _hourLogs;
+    }
+
+    // Langkah 2: Filter berdasarkan Status Verifikasi
+    switch (_statusFilter) {
+      case StatusFilter.verified:
+        return periodFilteredLogs.where((log) => log.getBoolValue('is_verified') == true).toList();
+      case StatusFilter.pending:
+        return periodFilteredLogs.where((log) => log.getBoolValue('is_verified') == false).toList();
+      case StatusFilter.all:
+      default:
+        return periodFilteredLogs;
+    }
+  }
+
   double get _totalHours {
-    return _hourLogs.fold(0.0, (sum, log) {
+    return _getFilteredLogs().fold(0.0, (sum, log) {
       final event = log.expand['event_id']?.first;
       final hours = event?.getDoubleValue('duration_hours') ?? 0.0;
       return sum + hours;
@@ -55,7 +103,7 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
   }
 
   double get _verifiedHours {
-    return _hourLogs
+    return _getFilteredLogs()
         .where((log) => log.getBoolValue('is_verified') == true)
         .fold(0.0, (sum, log) {
           final event = log.expand['event_id']?.first;
@@ -65,7 +113,7 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
   }
 
   double get _pendingHours {
-     return _hourLogs
+     return _getFilteredLogs()
         .where((log) => log.getBoolValue('is_verified') == false)
         .fold(0.0, (sum, log) {
           final event = log.expand['event_id']?.first;
@@ -75,7 +123,7 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
   }
   
   int get _totalEvents {
-    return _hourLogs.length;
+    return _getFilteredLogs().length;
   }
 
   @override
@@ -200,50 +248,47 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
   }
 
   Widget _buildHoursLog() {
-    if (_hourLogs.isEmpty) {
-      return Expanded(
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.history_toggle_off, size: 60, color: Colors.grey.shade400),
-              SizedBox(height: 16),
-              Text("No volunteer hours logged yet.", style: TextStyle(fontSize: 16, color: Colors.grey.shade600)),
-            ],
-          )
-        ),
-      );
-    }
-    return Container(
-      padding: EdgeInsets.fromLTRB(24, 16, 24, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Text('Hours Log', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
-            Spacer(),
-            InkWell(
-              onTap: () {},
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding: const EdgeInsets.all(4.0),
-                child: Row(children: [
-                  Icon(Icons.filter_list_rounded, color: Color(0xFF6C63FF), size: 20),
-                  SizedBox(width: 4),
-                  Text('Filter', style: TextStyle(color: Color(0xFF6C63FF), fontWeight: FontWeight.w600)),
-                ]),
+    final filteredLogs = _getFilteredLogs();
+    final bool isStatusFilterActive = _statusFilter != StatusFilter.all;
+    final activeFilterColor = Color(0xFF6C63FF);
+    final inactiveFilterColor = Colors.grey.shade600;
+
+    return Expanded(
+      child: Container(
+        padding: EdgeInsets.fromLTRB(24, 16, 24, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Text('Hours Log', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
+              Spacer(),
+              InkWell(
+                onTap: _showFilterDialog,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.all(4.0),
+                  child: Row(children: [
+                    Icon(Icons.filter_list_rounded, color: isStatusFilterActive ? activeFilterColor : inactiveFilterColor, size: 20),
+                    SizedBox(width: 4),
+                    Text('Filter', style: TextStyle(color: isStatusFilterActive ? activeFilterColor : inactiveFilterColor, fontWeight: FontWeight.w600)),
+                  ]),
+                ),
               ),
+            ]),
+            SizedBox(height: 16),
+            Expanded(
+              child: filteredLogs.isEmpty
+                  ? Center(
+                      child: Text("No logs match your filters.", style: TextStyle(fontSize: 16, color: Colors.grey.shade600)),
+                    )
+                  : ListView.builder(
+                      padding: EdgeInsets.zero,
+                      itemCount: filteredLogs.length,
+                      itemBuilder: (context, index) => _buildLogCard(filteredLogs[index]),
+                    ),
             ),
-          ]),
-          SizedBox(height: 16),
-          Expanded(
-            child: ListView.builder(
-              padding: EdgeInsets.zero,
-              itemCount: _hourLogs.length,
-              itemBuilder: (context, index) => _buildLogCard(_hourLogs[index]),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -312,6 +357,53 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
     );
   }
 
+  void _showFilterDialog() {
+    showModalBottomSheet(
+      context: context,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return Container(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 12.0),
+                child: Text('Filter by Status', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
+              ),
+              ListTile(
+                leading: Icon(Icons.list_alt_rounded, color: _statusFilter == StatusFilter.all ? Color(0xFF6C63FF) : Colors.grey),
+                title: Text('Show All', style: TextStyle(fontWeight: _statusFilter == StatusFilter.all ? FontWeight.bold : FontWeight.normal)),
+                onTap: () {
+                  setState(() => _statusFilter = StatusFilter.all);
+                  Navigator.pop(context);
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.verified_user_rounded, color: _statusFilter == StatusFilter.verified ? Color(0xFF10B981) : Colors.grey),
+                title: Text('Verified Only', style: TextStyle(fontWeight: _statusFilter == StatusFilter.verified ? FontWeight.bold : FontWeight.normal)),
+                onTap: () {
+                  setState(() => _statusFilter = StatusFilter.verified);
+                  Navigator.pop(context);
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.pending_actions_rounded, color: _statusFilter == StatusFilter.pending ? Color(0xFFED8936) : Colors.grey),
+                title: Text('Pending Only', style: TextStyle(fontWeight: _statusFilter == StatusFilter.pending ? FontWeight.bold : FontWeight.normal)),
+                onTap: () {
+                  setState(() => _statusFilter = StatusFilter.pending);
+                  Navigator.pop(context);
+                },
+              ),
+              SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Color _getCategoryColor(String category) {
     switch (category) {
       case 'Environment': return Color(0xFF10B981);
@@ -367,7 +459,7 @@ class _VolunteerHoursScreenState extends State<VolunteerHoursScreen> {
             case 0: Navigator.popUntil(context, (route) => route.isFirst); break;
             case 1: Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => SearchScreen())); break;
             case 2: Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => GamificationScreen())); break;
-            case 3: break; // Already here
+            case 3: break;
             case 4: Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => ProfileScreen())); break;
           }
         },

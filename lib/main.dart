@@ -12,7 +12,6 @@ import 'screens/search_screen.dart';
 import 'screens/gamification_screen.dart';
 import 'screens/social_sharing_screen.dart';
 import 'screens/volunteer_hours_screen.dart';
-import 'screens/organization_register_screen.dart';
 
 void main() {
   runApp(VolunteerVibeApp());
@@ -72,7 +71,6 @@ class VolunteerVibeApp extends StatelessWidget {
         '/gamification': (context) => GamificationScreen(),
         '/social': (context) => SocialSharingScreen(),
         '/hours': (context) => VolunteerHoursScreen(),
-        '/org-register': (context) => OrganizationRegisterScreen(),
       },
     );
   }

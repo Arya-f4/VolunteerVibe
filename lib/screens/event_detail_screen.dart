@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:pocketbase/pocketbase.dart';
 import 'package:intl/intl.dart';
 import 'package:volunteervibe/pocketbase_client.dart';
-import 'package:volunteervibe/services/pocketbase_service.dart'; // Pastikan path ini benar
+import 'package:volunteervibe/services/pocketbase_service.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart' as latlng;
 
 class EventDetailScreen extends StatefulWidget {
   final RecordModel event;
@@ -17,21 +19,55 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
   final PocketBaseService _pbService = PocketBaseService();
   late RecordModel _currentEvent;
   
-  bool _isLoading = true; // Untuk loading status awal
-  bool _isProcessing = false; // Untuk proses klik tombol
-  String? _userStatus; // Status pengguna: 'waiting', 'accepted', atau null
+  bool _isLoading = true;
+  bool _isProcessing = false;
+  String? _userStatus;
+
+  final MapController _mapController = MapController();
+  latlng.LatLng? _eventLocation;
 
   @override
   void initState() {
     super.initState();
     _currentEvent = widget.event;
-    _checkUserStatus(); // Cek status pendaftaran saat layar dimuat
+    _initializeData();
+  }
+  
+  void _initializeData() {
+    _parseLocation();
+    _checkUserStatus();
+  }
+  
+  @override
+  void dispose() {
+    _mapController.dispose();
+    super.dispose();
+  }
+
+  void _parseLocation() {
+    final locationString = _currentEvent.getStringValue('location');
+    if (locationString.isNotEmpty) {
+      try {
+        final parts = locationString.split(',');
+        if (parts.length == 2) {
+          final lat = double.tryParse(parts[0].trim());
+          final lon = double.tryParse(parts[1].trim());
+          if (lat != null && lon != null) {
+            _eventLocation = latlng.LatLng(lat, lon);
+          }
+        }
+      } catch (e) {
+        print("Failed to parse location string: $e");
+        _eventLocation = null;
+      }
+    }
   }
 
   Future<void> _checkUserStatus() async {
     setState(() => _isLoading = true);
     try {
-      final userId = pb.authStore.model.id;
+      final userId = pb.authStore.model?.id;
+      if (userId == null) return;
       final result = await _pbService.checkUserRegistrationStatus(_currentEvent.id, userId);
       if (mounted) {
         setState(() {
@@ -49,9 +85,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
 
   Future<void> _joinEvent() async {
     if (_isProcessing) return;
-
     setState(() => _isProcessing = true);
-
     try {
       final userId = pb.authStore.model.id;
       final eventId = _currentEvent.id;
@@ -69,12 +103,9 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
       }
       
       await _pbService.createEventSession(eventId: eventId, userId: userId);
-      
       setState(() => _userStatus = 'waiting');
-
       Navigator.of(context).pop();
       _showSuccessDialog(context);
-
     } catch (e) {
       print('Error joining event: $e');
       Navigator.of(context).pop();
@@ -96,13 +127,14 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     final description = _currentEvent.getStringValue('description', 'No description available.');
     final orgName = organization?.getStringValue('name', 'Unknown Organization') ?? 'Unknown Organization';
     final categoryName = category?.getStringValue('name', 'Uncategorized') ?? 'Uncategorized';
-    String locationDisplay = _currentEvent.getStringValue('location', 'Location not specified');
-    final points = _currentEvent.getIntValue('point_event', 0);
+    
     final maxParticipants = _currentEvent.getIntValue('max_participant', 0);
     final currentParticipants = _currentEvent.getListValue<String>('participant_id').length;
+    
     final DateTime eventDate = DateTime.parse(_currentEvent.getStringValue('date'));
-    final String dateFormatted = DateFormat('EEEE, MMM dd, yyyy').format(eventDate);
-    final String timeFormatted = DateFormat('h:mm a').format(eventDate);
+    final String dateFormatted = DateFormat('EEEE, MMM dd, yy').format(eventDate.toLocal());
+    final String timeFormatted = DateFormat('h:mm a').format(eventDate.toLocal());
+
     String? orgAvatarUrl;
     if (organization != null) {
       final orgAvatarFilename = organization.getStringValue('avatar');
@@ -115,7 +147,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            expandedHeight: 300,
+            expandedHeight: 250,
             pinned: true,
             stretch: true,
             backgroundColor: Color(0xFF1E293B),
@@ -149,7 +181,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [Colors.transparent, Colors.black54],
-                        stops: [0.6, 1.0],
+                        stops: [0.5, 1.0],
                       ),
                     ),
                   ),
@@ -173,7 +205,9 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                     child: Text(categoryName, style: TextStyle(color: Color(0xFF6C63FF), fontWeight: FontWeight.w600)),
                   ),
                   SizedBox(height: 24),
-                  _buildInfoCard(context, dateFormatted, timeFormatted, locationDisplay),
+                  _buildDateTimeCard(dateFormatted, timeFormatted),
+                  SizedBox(height: 24),
+                  if (_eventLocation != null) _buildLocationMap(),
                   SizedBox(height: 24),
                   _buildParticipantsCard(currentParticipants, maxParticipants),
                   SizedBox(height: 24),
@@ -194,7 +228,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     );
   }
 
-  Widget _buildInfoCard(BuildContext context, String date, String time, String location) {
+  Widget _buildDateTimeCard(String date, String time) {
     return Container(
       padding: EdgeInsets.all(20),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: Offset(0, 4))]),
@@ -203,8 +237,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
           _buildInfoRow(Icons.calendar_today_outlined, 'Date', date),
           SizedBox(height: 16),
           _buildInfoRow(Icons.access_time_outlined, 'Time', time),
-          SizedBox(height: 16),
-          _buildInfoRow(Icons.location_on_outlined, 'Location', location),
         ],
       ),
     );
@@ -222,6 +254,47 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
               Text(label, style: TextStyle(fontSize: 12, color: Color(0xFF718096), fontWeight: FontWeight.w500)),
               Text(value, style: TextStyle(fontSize: 16, color: Color(0xFF2D3748), fontWeight: FontWeight.w600)),
             ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLocationMap() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [Icon(Icons.location_on_outlined, color: Color(0xFF6C63FF)), SizedBox(width: 8), Text('Location', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2D3748)))]),
+        SizedBox(height: 16),
+        Container(
+          height: 200,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: Offset(0, 4))]
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: _eventLocation!,
+                initialZoom: 15.0,
+                interactionOptions: InteractionOptions(flags: InteractiveFlag.none), // Membuat peta tidak interaktif
+              ),
+              children: [
+                TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: _eventLocation!,
+                      width: 80.0,
+                      height: 80.0,
+                      child: Icon(Icons.location_pin, color: Colors.red, size: 40),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ],
@@ -273,7 +346,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
 
     if (_userStatus == 'accepted') {
       buttonText = 'Anda Sudah Terdaftar';
-      buttonColor = Color(0xFF38A169); // Green for accepted
+      buttonColor = Color(0xFF38A169);
     } else if (_userStatus == 'waiting') {
       buttonText = 'Permintaan Terkirim';
       buttonColor = Colors.orange;
