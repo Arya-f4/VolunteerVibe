@@ -33,7 +33,8 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> {
   final _descriptionController = TextEditingController();
   final _maxParticipantController = TextEditingController();
   final _pointsController = TextEditingController();
-  
+  final _durationController = TextEditingController();
+
   // State
   int _currentStep = 0;
   bool _isLoading = false;
@@ -43,7 +44,7 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> {
   List<RecordModel> _fetchedCategories = [];
   String? _selectedCategoryId;
   
-  latlng.LatLng _selectedLocation = latlng.LatLng(-7.2575, 112.7521);
+  latlng.LatLng _selectedLocation = latlng.LatLng(-7.2575, 112.7521); // Default: Surabaya
   String _locationAddress = "Memuat lokasi...";
 
   @override
@@ -63,6 +64,7 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> {
     _descriptionController.dispose();
     _maxParticipantController.dispose();
     _pointsController.dispose();
+    _durationController.dispose();
     _pageController.dispose();
     _mapController.dispose();
     super.dispose();
@@ -105,54 +107,6 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> {
     _mapController.move(location, _mapController.camera.zoom);
   }
 
-  // [PERBAIKAN FINAL] Hanya ada perubahan di dalam fungsi _createEvent
-  Future<void> _createEvent() async {
-    if (!_formKey.currentState!.validate() || _selectedCategoryId == null) return;
-    
-    setState(() => _isLoading = true);
-    try {
-      final eventDateTime = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, _selectedTime.hour, _selectedTime.minute);
-      
-      final body = <String, dynamic>{
-        "title": _titleController.text,
-        "description": _descriptionController.text,
-        "date": eventDateTime.toIso8601String(),
-        
-        // [PERBAIKAN] Mengirim lokasi sebagai objek Map, bukan String.
-        // Ini sesuai dengan tipe data 'map' di PocketBase.
-        "location": {
-          "lat": _selectedLocation.latitude,
-          "lon": _selectedLocation.longitude
-        },
-
-        "max_participant": int.tryParse(_maxParticipantController.text) ?? 0,
-        "point_event": int.tryParse(_pointsController.text) ?? 0,
-        "organization_id": widget.organization.id,
-        "categories_id": _selectedCategoryId,
-      };
-
-      final record = await _pbService.createEvent(body: body);
-
-      if (record != null) {
-        Navigator.pop(context);
-        widget.onEventCreated();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Event created successfully!'), backgroundColor: Color(0xFF10B981), behavior: SnackBarBehavior.floating),
-        );
-      } else {
-        throw Exception('Failed to create event record.');
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal membuat event: Periksa kembali format input Anda.'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
-      );
-    } finally {
-      if(mounted) setState(() => _isLoading = false);
-    }
-  }
-
-
-  // Sisa kode di bawah ini tidak ada yang berubah.
   @override
   Widget build(BuildContext context) {
     return Form(
@@ -294,10 +248,10 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> {
               SizedBox(width: 16),
               Expanded(
                 child: _buildTextField(
-                  controller: _pointsController,
-                  label: 'Points Reward',
-                  hint: 'e.g., 100',
-                  icon: Icons.star,
+                  controller: _durationController,
+                  label: 'Duration (Hours)',
+                  hint: 'e.g., 3',
+                  icon: Icons.hourglass_bottom,
                   keyboardType: TextInputType.number,
                   validator: (value) {
                     if (value == null || value.isEmpty) return 'Required';
@@ -307,6 +261,19 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> {
                 ),
               ),
             ],
+          ),
+          SizedBox(height: 20),
+          _buildTextField(
+            controller: _pointsController,
+            label: 'Points Reward',
+            hint: 'e.g., 100',
+            icon: Icons.star,
+            keyboardType: TextInputType.number,
+            validator: (value) {
+              if (value == null || value.isEmpty) return 'Required';
+              if (int.tryParse(value) == null) return 'Invalid number';
+              return null;
+            },
           ),
         ],
       ),
@@ -499,10 +466,11 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> {
           SizedBox(height: 16),
           Text(_descriptionController.text, style: TextStyle(color: Color(0xFF4A5568), fontSize: 14, height: 1.5)),
           SizedBox(height: 20),
-          _buildReviewItem(Icons.calendar_today, 'Date & Time', DateFormat('MMM dd, yyyy • HH:mm').format(eventDateTime)),
+          _buildReviewItem(Icons.calendar_today, 'Date & Time', DateFormat('MMM dd, yy • HH:mm').format(eventDateTime)),
           _buildReviewItem(Icons.location_on, 'Location', _locationAddress),
           _buildReviewItem(Icons.people, 'Max Participants', _maxParticipantController.text),
           _buildReviewItem(Icons.star, 'Points Reward', _pointsController.text),
+          _buildReviewItem(Icons.hourglass_bottom, 'Duration', '${_durationController.text} hours'),
         ],
       ),
     );
@@ -580,5 +548,44 @@ class _CreateEventBottomSheetState extends State<CreateEventBottomSheet> {
   Future<void> _selectTime() async {
     final pickedTime = await showTimePicker(context: context, initialTime: _selectedTime, builder: (context, child) => Theme(data: Theme.of(context).copyWith(colorScheme: ColorScheme.light(primary: Color(0xFF6C63FF))), child: child!));
     if (pickedTime != null) setState(() => _selectedTime = pickedTime);
+  }
+
+  Future<void> _createEvent() async {
+    if (!_formKey.currentState!.validate() || _selectedCategoryId == null) return;
+    
+    setState(() => _isLoading = true);
+    try {
+      final eventDateTime = DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day, _selectedTime.hour, _selectedTime.minute);
+      
+      final body = <String, dynamic>{
+        "title": _titleController.text,
+        "description": _descriptionController.text,
+        "date": eventDateTime.toIso8601String(),
+        "location": "${_selectedLocation.latitude},${_selectedLocation.longitude}",
+        "max_participant": int.tryParse(_maxParticipantController.text) ?? 0,
+        "point_event": int.tryParse(_pointsController.text) ?? 0,
+        "duration_hours": int.tryParse(_durationController.text) ?? 0,
+        "organization_id": widget.organization.id,
+        "categories_id": _selectedCategoryId,
+      };
+
+      final record = await _pbService.createEvent(body: body);
+
+      if (record != null) {
+        Navigator.pop(context);
+        widget.onEventCreated();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Event created successfully!'), backgroundColor: Color(0xFF10B981), behavior: SnackBarBehavior.floating),
+        );
+      } else {
+        throw Exception('Failed to create event record.');
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal membuat event: Periksa kembali format input Anda.'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
+      );
+    } finally {
+      if(mounted) setState(() => _isLoading = false);
+    }
   }
 }

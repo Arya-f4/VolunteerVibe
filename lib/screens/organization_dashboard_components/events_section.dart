@@ -12,7 +12,7 @@ class EventsSection extends StatelessWidget {
     Key? key,
     required this.events,
     required this.onViewAll,
-    required this.onCreateEvent,
+    required this.onCreateEvent, required Map<String, int> waitingCounts, required Future<void> Function() onRefresh,
   }) : super(key: key);
 
   @override

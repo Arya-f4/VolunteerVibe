@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:pocketbase/pocketbase.dart';
 import 'package:volunteervibe/services/pocketbase_service.dart';
-import '../screens/organization_dashboard_components/organization_header.dart';
-import '../screens/organization_dashboard_components//stats_section.dart';
-import '../screens/organization_dashboard_components//quick_actions.dart';
-import '../screens/organization_dashboard_components//events_section.dart';
-import '../screens/organization_dashboard_components//access_denied.dart';
-import '../screens/organization_dashboard_components//create_event_bottom_sheet.dart';
+import 'package:volunteervibe/screens/organization_dashboard_components/organization_header.dart';
+import 'package:volunteervibe/screens/organization_dashboard_components/stats_section.dart';
+import 'package:volunteervibe/screens/organization_dashboard_components/events_section.dart';
+import 'package:volunteervibe/screens/organization_dashboard_components/access_denied.dart';
+import 'package:volunteervibe/screens/organization_dashboard_components/create_event_bottom_sheet.dart';
 import 'package:volunteervibe/screens/profile_screen.dart';
 import 'package:volunteervibe/screens/search_screen.dart';
 import 'package:volunteervibe/screens/gamification_screen.dart';
@@ -26,10 +25,13 @@ class _OrganizationDashboardState extends State<OrganizationDashboard> with Tick
   bool _isLoading = true;
   RecordModel? _organization;
   List<RecordModel> _organizationEvents = [];
+  Map<String, int> _waitingCounts = {};
+
   int _activeEventsCount = 0;
   int _totalVolunteers = 0;
   int _completedEventsCount = 0;
-  double _averageRating = 0.0;
+  
+  int _bottomNavIndex = 0; 
 
   @override
   void initState() {
@@ -39,24 +41,12 @@ class _OrganizationDashboardState extends State<OrganizationDashboard> with Tick
   }
 
   void _initializeAnimations() {
-    _fadeController = AnimationController(
-      duration: Duration(milliseconds: 800),
-      vsync: this,
-    );
-    _slideController = AnimationController(
-      duration: Duration(milliseconds: 600),
-      vsync: this,
-    );
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut),
-    );
-    _slideAnimation = Tween<Offset>(begin: Offset(0, 0.3), end: Offset.zero).animate(
-      CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic),
-    );
-    _fadeController.forward();
-    _slideController.forward();
+    _fadeController = AnimationController(duration: Duration(milliseconds: 800), vsync: this);
+    _slideController = AnimationController(duration: Duration(milliseconds: 600), vsync: this);
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(parent: _fadeController, curve: Curves.easeInOut));
+    _slideAnimation = Tween<Offset>(begin: Offset(0, 0.3), end: Offset.zero).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic));
   }
-
+  
   @override
   void dispose() {
     _fadeController.dispose();
@@ -68,9 +58,13 @@ class _OrganizationDashboardState extends State<OrganizationDashboard> with Tick
     setState(() => _isLoading = true);
     try {
       final orgRecord = _pbService.getCurrentUser();
-      if (orgRecord != null && orgRecord.collectionName == 'organization') {
+      if (orgRecord != null && (orgRecord.collectionName == 'organization' || orgRecord.data['is_organization'] == true)) {
         _organization = orgRecord;
         _organizationEvents = await _pbService.fetchEventsByOrganization(organizationId: _organization!.id);
+        
+        final eventIds = _organizationEvents.map((e) => e.id).toList();
+        _waitingCounts = await _pbService.getWaitingCountsForEvents(eventIds);
+        
         _calculateStats();
       } else {
         _organization = null;
@@ -81,38 +75,42 @@ class _OrganizationDashboardState extends State<OrganizationDashboard> with Tick
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
+        if (_organization != null) {
+          _fadeController.forward();
+          _slideController.forward();
+        }
       }
     }
   }
 
   void _calculateStats() {
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
     int active = 0;
     int completed = 0;
-    int volunteers = 0;
-    double totalRating = 0.0;
-    int ratedEvents = 0;
+    Set<String> uniqueVolunteers = {};
 
     for (var event in _organizationEvents) {
       final eventDate = DateTime.parse(event.getStringValue('date'));
-      if (eventDate.isAfter(now)) {
-        active++;
-      } else {
+      final eventDay = DateTime(eventDate.year, eventDate.month, eventDate.day);
+      
+      if (eventDay.isBefore(today)) {
         completed++;
+      } else {
+        active++;
       }
-      volunteers += (event.getListValue<String>('participant_id')).length;
-      final rating = event.getDoubleValue('rating', 0.0);
-      if (rating > 0) {
-        totalRating += rating;
-        ratedEvents++;
+      
+      final participants = event.getListValue<String>('participant_id');
+      for (var pId in participants) {
+        uniqueVolunteers.add(pId);
       }
     }
 
     setState(() {
       _activeEventsCount = active;
       _completedEventsCount = completed;
-      _totalVolunteers = volunteers;
-      _averageRating = ratedEvents > 0 ? totalRating / ratedEvents : 0.0;
+      _totalVolunteers = uniqueVolunteers.length;
     });
   }
 
@@ -120,7 +118,11 @@ class _OrganizationDashboardState extends State<OrganizationDashboard> with Tick
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Color(0xFFF8FAFC),
-      body: _buildBody(),
+      body: RefreshIndicator(
+        onRefresh: _loadDashboardData,
+        color: Color(0xFF6C63FF),
+        child: _buildBody()
+      ),
       bottomNavigationBar: _buildBottomNavigationBar(),
       floatingActionButton: _organization != null ? _buildFloatingActionButton() : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
@@ -134,44 +136,18 @@ class _OrganizationDashboardState extends State<OrganizationDashboard> with Tick
       foregroundColor: Colors.white,
       elevation: 8,
       icon: Icon(Icons.add, size: 24),
-      label: Text(
-        'Create Event',
-        style: TextStyle(
-          fontWeight: FontWeight.w600,
-          fontSize: 16,
-        ),
-      ),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      label: Text('Create Event', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     );
   }
 
   Widget _buildBody() {
     return CustomScrollView(
+      physics: BouncingScrollPhysics(),
       slivers: [
         _buildSliverAppBar(),
         if (_isLoading)
-          SliverFillRemaining(
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6C63FF)),
-                  ),
-                  SizedBox(height: 16),
-                  Text(
-                    'Loading dashboard...',
-                    style: TextStyle(
-                      color: Color(0xFF718096),
-                      fontSize: 16,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          )
+          SliverFillRemaining(child: Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6C63FF)))))
         else if (_organization == null)
           SliverFillRemaining(child: AccessDenied(onGoBack: () => Navigator.pop(context)))
         else
@@ -190,15 +166,14 @@ class _OrganizationDashboardState extends State<OrganizationDashboard> with Tick
                           activeEventsCount: _activeEventsCount,
                           totalVolunteers: _totalVolunteers,
                           completedEventsCount: _completedEventsCount,
-                          averageRating: _averageRating,
                         ),
-                        SizedBox(height: 32),
-                        QuickActions(),
                         SizedBox(height: 32),
                         EventsSection(
                           events: _organizationEvents,
+                          waitingCounts: _waitingCounts,
                           onViewAll: () {},
                           onCreateEvent: () => _showCreateEventBottomSheet(),
+                          onRefresh: _loadDashboardData,
                         ),
                         SizedBox(height: 100),
                       ],
@@ -220,13 +195,14 @@ class _OrganizationDashboardState extends State<OrganizationDashboard> with Tick
       backgroundColor: Color(0xFF6C63FF),
       foregroundColor: Colors.white,
       elevation: 0,
+      automaticallyImplyLeading: false,
       flexibleSpace: FlexibleSpaceBar(
         background: _organization != null
             ? OrganizationHeader(
                 organization: _organization!,
                 pbService: _pbService,
               )
-            : null,
+            : Container(color: Color(0xFF6C63FF)),
       ),
     );
   }
@@ -252,17 +228,42 @@ class _OrganizationDashboardState extends State<OrganizationDashboard> with Tick
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
+            blurRadius: 20,
             offset: Offset(0, -5),
           ),
         ],
       ),
-      child: BottomNavigationBar(
-        currentIndex: 0,
-        onTap: (index) {
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildCompactNavItem(Icons.home_rounded, 'Home', 0),
+              _buildCompactNavItem(Icons.search_rounded, 'Search', 1),
+              _buildCompactNavItem(Icons.emoji_events_rounded, 'Rewards', 2),
+              _buildCompactNavItem(Icons.schedule_rounded, 'Hours', 3),
+              _buildCompactNavItem(Icons.person_rounded, 'Profile', 4),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactNavItem(IconData icon, String label, int index) {
+    final activeColor = Color(0xFF6C63FF);
+    final inactiveColor = Color(0xFF718096);
+    final bool isActive = _bottomNavIndex == index;
+
+    return Flexible(
+      child: GestureDetector(
+        onTap: () {
+          if (index == _bottomNavIndex) return;
+
           switch (index) {
             case 0:
-              Navigator.popUntil(context, (route) => route.isFirst);
+              // Sudah di halaman ini
               break;
             case 1:
               Navigator.push(context, MaterialPageRoute(builder: (context) => SearchScreen()));
@@ -278,18 +279,34 @@ class _OrganizationDashboardState extends State<OrganizationDashboard> with Tick
               break;
           }
         },
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.transparent,
-        selectedItemColor: Color(0xFF6C63FF),
-        unselectedItemColor: Color(0xFF718096),
-        elevation: 0,
-        items: [
-          BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Search'),
-          BottomNavigationBarItem(icon: Icon(Icons.emoji_events_outlined), label: 'Rewards'),
-          BottomNavigationBarItem(icon: Icon(Icons.access_time), label: 'Hours'),
-          BottomNavigationBarItem(icon: Icon(Icons.person_outline), label: 'Profile'),
-        ],
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: isActive ? activeColor.withOpacity(0.1) : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                color: isActive ? activeColor : inactiveColor,
+                size: 24,
+              ),
+              SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isActive ? activeColor : inactiveColor,
+                  fontSize: 11,
+                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

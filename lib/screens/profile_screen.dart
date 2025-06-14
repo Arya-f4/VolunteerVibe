@@ -23,6 +23,8 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   final PocketBaseService _pbService = PocketBaseService();
 
+  int _bottomNavIndex = 4; // 4 adalah index untuk Profile
+
   bool _isLoading = true;
   String _userName = 'Guest';
   String _userEmail = '...';
@@ -82,13 +84,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: _buildProfileContentBody(),
       );
     }
+    
     return Scaffold(
       backgroundColor: Color(0xFFF8FAFC),
       appBar: AppBar(
         title: Text('My Profile', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
         backgroundColor: Colors.white,
         elevation: 1,
-        automaticallyImplyLeading: false,
       ),
       body: SafeArea(
         child: RefreshIndicator(
@@ -97,6 +99,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: _buildProfileContentBody(),
         ),
       ),
+      bottomNavigationBar: _buildBottomNavigationBar(),
     );
   }
 
@@ -143,7 +146,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               radius: 52,
               backgroundColor: Colors.grey.shade200,
               backgroundImage: _userAvatarUrl != null ? NetworkImage(_userAvatarUrl!) : null,
-              child: _userAvatarUrl == null ? Icon(Icons.person, color: Colors.white, size: 60) : null,
+              child: _userAvatarUrl == null ? Icon(Icons.person, color: Colors.grey.shade400, size: 60) : null,
             ),
           ),
         ),
@@ -250,12 +253,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
             CircleAvatar(
               radius: 30,
               backgroundColor: isEarned ? earnedColor.withOpacity(0.15) : unearnedColor.withOpacity(0.15),
-              child: Image.network(
-                iconUrl,
-                width: 32,
-                height: 32,
-                errorBuilder: (context, error, stackTrace) => Icon(Icons.shield, color: isEarned ? earnedColor : unearnedColor),
-              ),
+              child: iconUrl.isNotEmpty
+                  ? Image.network(
+                      iconUrl,
+                      width: 32,
+                      height: 32,
+                      errorBuilder: (context, error, stackTrace) => Icon(Icons.shield, color: isEarned ? earnedColor : unearnedColor),
+                    )
+                  : Icon(Icons.shield, color: isEarned ? earnedColor : unearnedColor),
             ),
           ],
         ),
@@ -307,6 +312,96 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
         }
       },
+    );
+  }
+
+  Widget _buildBottomNavigationBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 20,
+            offset: Offset(0, -5),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildCompactNavItem(Icons.home_rounded, 'Home', 0),
+              _buildCompactNavItem(Icons.search_rounded, 'Search', 1),
+              _buildCompactNavItem(Icons.emoji_events_rounded, 'Rewards', 2),
+              _buildCompactNavItem(Icons.schedule_rounded, 'Hours', 3),
+              _buildCompactNavItem(Icons.person_rounded, 'Profile', 4),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactNavItem(IconData icon, String label, int index) {
+    final activeColor = Color(0xFF6C63FF);
+    final inactiveColor = Color(0xFF718096);
+    final bool isActive = _bottomNavIndex == index;
+
+    return Flexible(
+      child: GestureDetector(
+        onTap: () {
+          if (isActive) return;
+
+          switch (index) {
+            case 0:
+              Navigator.popUntil(context, (route) => route.isFirst);
+              break;
+            case 1:
+              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => SearchScreen()));
+              break;
+            case 2:
+              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => GamificationScreen()));
+              break;
+            case 3:
+              Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => VolunteerHoursScreen()));
+              break;
+            case 4:
+              // Already on the Profile screen
+              break;
+          }
+        },
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: isActive ? activeColor.withOpacity(0.1) : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                color: isActive ? activeColor : inactiveColor,
+                size: 24,
+              ),
+              SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isActive ? activeColor : inactiveColor,
+                  fontSize: 11,
+                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

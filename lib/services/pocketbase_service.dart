@@ -597,4 +597,65 @@ class PocketBaseService {
     }
   }
 
+   Future<List<RecordModel>> fetchHourLogs(String userId) async {
+    try {
+      final records = await pb.collection('event_session').getFullList(
+        // Filter: hanya ambil session milik user ini DAN yang statusnya sudah 'accepted'
+        filter: 'users_id = "$userId" && status = "accepted"',
+        // Expand: untuk mendapatkan detail event dan nama organisasi
+        expand: 'event_id,event_id.organization_id,event_id.categories_id',
+        sort: '-created', // Urutkan dari yang terbaru
+      );
+      print('PocketBaseService: Fetched ${records.length} hour logs for user $userId');
+      return records;
+    } catch (e) {
+      print('Error fetching hour logs: $e');
+      return [];
+    }
+  }
+
+   Future<void> verifyParticipantHours(String sessionId) async {
+    try {
+      // Cukup ubah field is_verified menjadi true
+      await pb.collection('event_session').update(sessionId, body: {
+        'is_verified': true,
+      });
+      print('PocketBaseService: Verified hours for session $sessionId.');
+    } catch (e) {
+      print('Error verifying hours for session $sessionId: $e');
+      throw Exception('Failed to verify hours');
+    }
+  }
+
+   Future<Map<String, int>> getWaitingCountsForEvents(List<String> eventIds) async {
+    if (eventIds.isEmpty) {
+      return {};
+    }
+
+    final counts = <String, int>{};
+    print('[DEBUG] Memeriksa waiting counts untuk event IDs: $eventIds');
+
+    // Lakukan perulangan untuk setiap event ID
+    for (final eventId in eventIds) {
+      try {
+        // Tanya ke database untuk setiap event secara spesifik
+        final result = await pb.collection('event_session').getList(
+            perPage: 1, // Kita hanya butuh totalItems, jadi 1 item per halaman sudah cukup
+            filter: 'event_id = "$eventId" && status = "waiting"'
+        );
+        
+        // Jika ada pendaftar yang waiting, simpan jumlahnya
+        if (result.totalItems > 0) {
+          counts[eventId] = result.totalItems;
+          print('[DEBUG] Event $eventId memiliki ${result.totalItems} pendaftar waiting.');
+        }
+      } catch (e) {
+        print('Gagal mendapatkan count untuk event $eventId: $e');
+      }
+    }
+
+    print('[DEBUG] Peta waiting counts final: $counts');
+    return counts;
+  }
+
 }
