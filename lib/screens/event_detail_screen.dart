@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:pocketbase/pocketbase.dart';
 import 'package:intl/intl.dart';
 import 'package:volunteervibe/pocketbase_client.dart';
+import 'package:volunteervibe/services/pocketbase_service.dart'; // Pastikan path ini benar
 
 class EventDetailScreen extends StatefulWidget {
   final RecordModel event;
@@ -13,16 +14,39 @@ class EventDetailScreen extends StatefulWidget {
 }
 
 class _EventDetailScreenState extends State<EventDetailScreen> {
+  final PocketBaseService _pbService = PocketBaseService();
   late RecordModel _currentEvent;
-  bool _isProcessing = false;
+  
+  bool _isLoading = true; // Untuk loading status awal
+  bool _isProcessing = false; // Untuk proses klik tombol
+  String? _userStatus; // Status pengguna: 'waiting', 'accepted', atau null
 
   @override
   void initState() {
     super.initState();
     _currentEvent = widget.event;
+    _checkUserStatus(); // Cek status pendaftaran saat layar dimuat
   }
 
-  // --- PERBAIKAN 3: Logika Join Event dan Penambahan Poin User ---
+  Future<void> _checkUserStatus() async {
+    setState(() => _isLoading = true);
+    try {
+      final userId = pb.authStore.model.id;
+      final result = await _pbService.checkUserRegistrationStatus(_currentEvent.id, userId);
+      if (mounted) {
+        setState(() {
+          _userStatus = result['status'];
+        });
+      }
+    } catch (e) {
+      print("Failed to check user status: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
   Future<void> _joinEvent() async {
     if (_isProcessing) return;
 
@@ -31,51 +55,31 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     try {
       final userId = pb.authStore.model.id;
       final eventId = _currentEvent.id;
-      final eventPoints = _currentEvent.getIntValue('point_event', 0);
 
-      if (userId == null) {
-        throw Exception("User not logged in.");
-      }
-      
-      final participants = List<String>.from(_currentEvent.getListValue<String>('participant_id'));
-      if (participants.contains(userId)) {
+      final existingStatus = await _pbService.checkUserRegistrationStatus(eventId, userId);
+      if (existingStatus['status'] != null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("You are already registered for this event."), backgroundColor: Colors.orange),
+          SnackBar(content: Text("Anda sudah mengirim permintaan untuk acara ini."), backgroundColor: Colors.orange),
         );
-        setState(() => _isProcessing = false);
+        setState(() {
+          _userStatus = existingStatus['status'];
+          _isProcessing = false;
+        });
         return;
       }
       
-      // Langkah 1: Daftarkan user ke event
-      final updatedEventRecord = await pb.collection('event').update(
-        eventId,
-        body: {'participant_id+': userId},
-        expand: 'organization_id,categories_id',
-      );
-
-      // Langkah 2: Tambahkan poin ke user
-      // Menggunakan 'points+' untuk penambahan atomik di sisi server
-      await pb.collection('users').update(
-        userId, 
-        body: {'points+': eventPoints}
-      );
-
-      // Refresh data user yang sedang login agar poinnya update di aplikasi
-      await pb.collection('users').authRefresh();
+      await _pbService.createEventSession(eventId: eventId, userId: userId);
       
-      // Update state event di UI
-      setState(() {
-        _currentEvent = updatedEventRecord;
-      });
+      setState(() => _userStatus = 'waiting');
 
-      Navigator.of(context).pop(); 
+      Navigator.of(context).pop();
       _showSuccessDialog(context);
 
     } catch (e) {
       print('Error joining event: $e');
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed to join event. Please try again."), backgroundColor: Colors.red),
+        SnackBar(content: Text("Gagal mengirim permintaan. Coba lagi."), backgroundColor: Colors.red),
       );
     } finally {
       if (mounted) {
@@ -84,36 +88,21 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
     final organization = _currentEvent.expand['organization_id']?.first;
     final category = _currentEvent.expand['categories_id']?.first;
-
     final title = _currentEvent.getStringValue('title', 'No Title');
     final description = _currentEvent.getStringValue('description', 'No description available.');
     final orgName = organization?.getStringValue('name', 'Unknown Organization') ?? 'Unknown Organization';
     final categoryName = category?.getStringValue('name', 'Uncategorized') ?? 'Uncategorized';
-    
-    // --- PERBAIKAN 1: Memperbaiki cara parsing lokasi ---
-    String locationDisplay = 'Location not specified';
-    try {
-      final locationData = _currentEvent.data['location'];
-      if (locationData is Map<String, dynamic> && locationData['address'] != null && locationData['address'].isNotEmpty) {
-        locationDisplay = locationData['address'];
-      }
-    } catch (e) {
-      print("Could not parse location address: $e");
-    }
-
+    String locationDisplay = _currentEvent.getStringValue('location', 'Location not specified');
     final points = _currentEvent.getIntValue('point_event', 0);
     final maxParticipants = _currentEvent.getIntValue('max_participant', 0);
     final currentParticipants = _currentEvent.getListValue<String>('participant_id').length;
-    
     final DateTime eventDate = DateTime.parse(_currentEvent.getStringValue('date'));
     final String dateFormatted = DateFormat('EEEE, MMM dd, yyyy').format(eventDate);
     final String timeFormatted = DateFormat('h:mm a').format(eventDate);
-
     String? orgAvatarUrl;
     if (organization != null) {
       final orgAvatarFilename = organization.getStringValue('avatar');
@@ -121,8 +110,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         orgAvatarUrl = pb.getFileUrl(organization, orgAvatarFilename).toString();
       }
     }
-    
-    final bool isUserRegistered = _currentEvent.getListValue<String>('participant_id').contains(pb.authStore.model.id);
 
     return Scaffold(
       body: CustomScrollView(
@@ -152,19 +139,10 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                         if (loadingProgress == null) return child;
                         return Center(child: CircularProgressIndicator(color: Colors.white));
                       },
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          color: Colors.grey.shade400,
-                          child: Icon(Icons.business_rounded, size: 80, color: Colors.white.withOpacity(0.7)),
-                        );
-                      },
+                      errorBuilder: (context, error, stackTrace) => Container(color: Colors.grey.shade400, child: Icon(Icons.business_rounded, size: 80, color: Colors.white.withOpacity(0.7))),
                     )
                   else
-                    Container(
-                      color: Colors.grey.shade400,
-                      child: Icon(Icons.business_rounded, size: 80, color: Colors.white.withOpacity(0.7)),
-                    ),
-
+                    Container(color: Colors.grey.shade400, child: Icon(Icons.business_rounded, size: 80, color: Colors.white.withOpacity(0.7))),
                   const DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -172,22 +150,6 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                         end: Alignment.bottomCenter,
                         colors: [Colors.transparent, Colors.black54],
                         stops: [0.6, 1.0],
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    bottom: 20,
-                    right: 20,
-                    child: Container(
-                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), borderRadius: BorderRadius.circular(20)),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.star, color: Colors.amber, size: 20),
-                          SizedBox(width: 4),
-                          Text('$points points', style: TextStyle(color: Color(0xFF2D3748), fontWeight: FontWeight.bold)),
-                        ],
                       ),
                     ),
                   ),
@@ -201,24 +163,14 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(title, style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
-                      ),
-                      SizedBox(width: 16),
-                      Container(
-                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(color: Color(0xFF6C63FF).withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-                        child: Text(categoryName, style: TextStyle(color: Color(0xFF6C63FF), fontWeight: FontWeight.w600)),
-                      ),
-                    ],
-                  ),
+                  Text(title, style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
                   SizedBox(height: 8),
-                  Text(
-                    'Organized by $orgName',
-                    style: TextStyle(fontSize: 16, color: Color(0xFF718096), fontWeight: FontWeight.w500),
+                  Text('Organized by $orgName', style: TextStyle(fontSize: 16, color: Color(0xFF718096), fontWeight: FontWeight.w500)),
+                  SizedBox(height: 16),
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(color: Color(0xFF6C63FF).withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                    child: Text(categoryName, style: TextStyle(color: Color(0xFF6C63FF), fontWeight: FontWeight.w600)),
                   ),
                   SizedBox(height: 24),
                   _buildInfoCard(context, dateFormatted, timeFormatted, locationDisplay),
@@ -233,7 +185,12 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: _buildBottomBar(context, title, points, isUserRegistered),
+      bottomNavigationBar: _isLoading
+          ? Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Center(heightFactor: 1.0, child: CircularProgressIndicator(color: Color(0xFF6C63FF))),
+            )
+          : _buildBottomBar(context, title),
     );
   }
 
@@ -256,11 +213,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
   Widget _buildInfoRow(IconData icon, String label, String value) {
     return Row(
       children: [
-        Container(
-          width: 40, height: 40,
-          decoration: BoxDecoration(color: Color(0xFF6C63FF).withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
-          child: Icon(icon, color: Color(0xFF6C63FF), size: 20),
-        ),
+        Container(width: 40, height: 40, decoration: BoxDecoration(color: Color(0xFF6C63FF).withOpacity(0.1), borderRadius: BorderRadius.circular(20)), child: Icon(icon, color: Color(0xFF6C63FF), size: 20)),
         SizedBox(width: 16),
         Expanded(
           child: Column(
@@ -286,17 +239,7 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
           SizedBox(height: 16),
           Row(
             children: [
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: LinearProgressIndicator(
-                    value: max > 0 ? current / max : 0,
-                    backgroundColor: Color(0xFFE2E8F0),
-                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF10B981)),
-                    minHeight: 8,
-                  ),
-                ),
-              ),
+              Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(10), child: LinearProgressIndicator(value: max > 0 ? current / max : 0, backgroundColor: Color(0xFFE2E8F0), valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF10B981)), minHeight: 8))),
               SizedBox(width: 16),
               Text('$current/$max', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
             ],
@@ -323,7 +266,19 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     );
   }
   
-  Widget _buildBottomBar(BuildContext context, String title, int points, bool isUserRegistered) {
+  Widget _buildBottomBar(BuildContext context, String title) {
+    bool isActionable = _userStatus == null;
+    String buttonText = 'Join This Event';
+    Color buttonColor = Color(0xFF6C63FF);
+
+    if (_userStatus == 'accepted') {
+      buttonText = 'Anda Sudah Terdaftar';
+      buttonColor = Color(0xFF38A169); // Green for accepted
+    } else if (_userStatus == 'waiting') {
+      buttonText = 'Permintaan Terkirim';
+      buttonColor = Colors.orange;
+    }
+
     return Container(
       padding: EdgeInsets.fromLTRB(24, 12, 24, 24),
       decoration: BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: Offset(0, -5))]),
@@ -331,22 +286,22 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         child: SizedBox(
           width: double.infinity,
           child: ElevatedButton(
-            onPressed: isUserRegistered ? null : () => _showRegistrationDialog(context, title, points),
+            onPressed: isActionable ? () => _showRegistrationDialog(context, title) : null,
             style: ElevatedButton.styleFrom(
-              backgroundColor: isUserRegistered ? Color(0xFFB0B0B0) : Color(0xFF6C63FF), 
-              padding: EdgeInsets.symmetric(vertical: 16), 
+              backgroundColor: buttonColor,
+              padding: EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              disabledBackgroundColor: Color(0xFFB0B0B0)
+              disabledBackgroundColor: buttonColor,
+              disabledForegroundColor: Colors.white,
             ),
-            child: Text(isUserRegistered ? 'Already Registered' : 'Join This Event', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+            child: Text(buttonText, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
           ),
         ),
       ),
     );
   }
 
-  // --- PERBAIKAN 2: Tampilan Dialog Konfirmasi Baru yang Lebih Menarik ---
-  void _showRegistrationDialog(BuildContext context, String title, int points) {
+  void _showRegistrationDialog(BuildContext context, String title) {
     showDialog(
       context: context,
       barrierDismissible: !_isProcessing,
@@ -360,67 +315,23 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Container(
-                      padding: EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Color(0xFF6C63FF).withOpacity(0.1),
-                        shape: BoxShape.circle
-                      ),
-                      child: Icon(Icons.event_available_outlined, color: Color(0xFF6C63FF), size: 40),
-                    ),
+                    Container(padding: EdgeInsets.all(16), decoration: BoxDecoration(color: Color(0xFF6C63FF).withOpacity(0.1), shape: BoxShape.circle), child: Icon(Icons.event_available_outlined, color: Color(0xFF6C63FF), size: 40)),
                     SizedBox(height: 20),
-                    Text(
-                      'Confirm Registration',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))
-                    ),
+                    Text('Kirim Permintaan Bergabung?', textAlign: TextAlign.center, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
                     SizedBox(height: 12),
-                    Text(
-                      'You are about to join the event "$title".',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 16, color: Color(0xFF4A5568)),
-                    ),
-                    SizedBox(height: 20),
-                    Container(
-                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.amber.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.amber.withOpacity(0.5))
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.star_rounded, color: Colors.amber[700], size: 20),
-                          SizedBox(width: 8),
-                          Text(
-                            'You will earn $points points!',
-                            style: TextStyle(color: Colors.amber[800], fontWeight: FontWeight.bold, fontSize: 14),
-                          ),
-                        ],
-                      ),
-                    ),
+                    Text('Permintaan Anda untuk bergabung di acara "$title" akan dikirim ke penyelenggara.', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Color(0xFF4A5568))),
                     SizedBox(height: 24),
                     Row(
                       children: [
-                        Expanded(
-                          child: TextButton(
-                            onPressed: _isProcessing ? null : () => Navigator.of(context).pop(),
-                            child: Text('Cancel', style: TextStyle(color: Color(0xFF718096), fontWeight: FontWeight.bold, fontSize: 16)),
-                          ),
-                        ),
+                        Expanded(child: TextButton(onPressed: _isProcessing ? null : () => Navigator.of(context).pop(), child: Text('Batal', style: TextStyle(color: Color(0xFF718096), fontWeight: FontWeight.bold, fontSize: 16)))),
                         SizedBox(width: 12),
                         Expanded(
                           child: ElevatedButton(
                             onPressed: _isProcessing ? null : _joinEvent,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Color(0xFF6C63FF),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              padding: EdgeInsets.symmetric(vertical: 12)
-                            ),
+                            style: ElevatedButton.styleFrom(backgroundColor: Color(0xFF6C63FF), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), padding: EdgeInsets.symmetric(vertical: 12)),
                             child: _isProcessing 
                                 ? SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white))
-                                : Text('Join Now', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                                : Text('Kirim Permintaan', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                           ),
                         ),
                       ],
@@ -446,20 +357,18 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
             children: [
               Container(width: 80, height: 80, decoration: BoxDecoration(color: Color(0xFF10B981).withOpacity(0.1), borderRadius: BorderRadius.circular(40)), child: Icon(Icons.check_circle, color: Color(0xFF10B981), size: 40)),
               SizedBox(height: 16),
-              Text('Registration Successful!', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
+              Text('Permintaan Terkirim!', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2D3748))),
               SizedBox(height: 8),
-              Text('The event points have been added to your account.', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF4A5568))),
+              Text('Permintaan Anda untuk bergabung telah dikirim. Mohon tunggu persetujuan dari penyelenggara.', textAlign: TextAlign.center, style: TextStyle(color: Color(0xFF4A5568))),
             ],
           ),
           actions: [
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
+                onPressed: () => Navigator.of(context).pop(),
                 style: ElevatedButton.styleFrom(backgroundColor: Color(0xFF6C63FF), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                child: Text('Awesome!', style: TextStyle(color: Colors.white)),
+                child: Text('Luar Biasa!', style: TextStyle(color: Colors.white)),
               ),
             ),
           ],

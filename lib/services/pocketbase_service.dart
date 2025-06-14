@@ -295,5 +295,168 @@ class PocketBaseService {
     }
   }
 
+   Future<List<RecordModel>> fetchNotifications() async {
+    final user = getCurrentUser();
+    if (user == null) {
+      print('PocketBaseService: Cannot fetch notifications, user is null.');
+      return [];
+    }
+
+    try {
+      // Filter: user_id cocok & status adalah 'accepted'
+      // Expand: untuk mendapatkan detail dari event_id
+      final result = await pb.collection('event_session').getFullList(
+        filter: "users_id = '${user.id}' && status = 'accepted'",
+        sort: '-created', // Tampilkan yang terbaru di atas
+        expand: 'event_id',
+      );
+      print('PocketBaseService: Fetched ${result.length} notifications for user ${user.id}.');
+      return result;
+    } catch (e) {
+      print('Error fetching notifications: $e');
+      return [];
+    }
+  }
+
+  // [BARU] Menandai notifikasi sebagai sudah dibaca
+  Future<void> markNotificationAsRead(String notificationId) async {
+    try {
+      await pb.collection('event_session').update(notificationId, body: {'read': true});
+      print('PocketBaseService: Marked notification $notificationId as read.');
+    } catch (e) {
+      print('Error marking notification as read: $e');
+      throw Exception('Failed to update notification');
+    }
+  }
+
+  // [BARU] Menghapus notifikasi
+  Future<void> deleteNotification(String notificationId) async {
+    try {
+      await pb.collection('event_session').delete(notificationId);
+      print('PocketBaseService: Deleted notification $notificationId.');
+    } catch (e) {
+      print('Error deleting notification: $e');
+      throw Exception('Failed to delete notification');
+    }
+  }
+
+   Future<int> getUnreadNotificationCount() async {
+    final user = getCurrentUser();
+    if (user == null) {
+      return 0; // Tidak ada pengguna, tidak ada notifikasi
+    }
+
+    try {
+      // Filter untuk notifikasi yang belum dibaca (read = false) & status accepted
+      final filterString = "users_id = '${user.id}' && status = 'accepted' && read = false";
+      
+      // Kita hanya butuh jumlahnya, jadi kita ambil 1 halaman dengan 1 item per halaman.
+      // PocketBase akan tetap mengembalikan totalItems yang cocok dengan filter.
+      final result = await pb.collection('event_session').getList(
+        perPage: 1, 
+        filter: filterString,
+      );
+
+      print('PocketBaseService: Found ${result.totalItems} unread notifications for user ${user.id}.');
+      return result.totalItems;
+    } catch (e) {
+      print('Error fetching unread notification count: $e');
+      return 0;
+    }
+  }
+
+  Future<List<RecordModel>> fetchParticipantsForEvent(String eventId) async {
+    try {
+      final records = await pb.collection('event_session').getFullList(
+        filter: 'event_id = "$eventId"',
+        expand: 'users_id', // Penting: untuk mendapatkan detail user
+      );
+      print('PocketBaseService: Fetched ${records.length} participants for event $eventId');
+      return records;
+    } catch (e) {
+      print('Error fetching participants for event: $e');
+      return [];
+    }
+  }
+
+  // [BARU] Mengubah status peserta di event_session
+  Future<void> updateParticipantStatus({
+    required String sessionId,
+    required String newStatus,
+  }) async {
+    try {
+      await pb.collection('event_session').update(sessionId, body: {
+        'status': newStatus,
+      });
+      print('PocketBaseService: Updated status for session $sessionId to $newStatus');
+    } catch (e) {
+      print('Error updating participant status: $e');
+      throw Exception('Failed to update participant status');
+    }
+  }
+
+  Future<void> addParticipantToEvent(String eventId, String userIdToAdd) async {
+    try {
+      // Pertama, ambil data event yang ada untuk mendapatkan daftar participant_id saat ini
+      final event = await pb.collection('event').getOne(eventId);
+      final currentParticipantIds = List<String>.from(event.getListValue<String>('participant_id'));
+
+      // Tambahkan ID baru jika belum ada untuk menghindari duplikat
+      if (!currentParticipantIds.contains(userIdToAdd)) {
+        currentParticipantIds.add(userIdToAdd);
+      }
+
+      // Update event dengan daftar participant_id yang baru
+      await pb.collection('event').update(eventId, body: {
+        'participant_id': currentParticipantIds,
+      });
+
+      print('PocketBaseService: Added user $userIdToAdd to event $eventId');
+    } catch (e) {
+      print('Error adding participant to event: $e');
+      throw Exception('Failed to add participant to event');
+    }
+  }
+
+   Future<void> createEventSession({
+    required String eventId,
+    required String userId,
+  }) async {
+    try {
+      await pb.collection('event_session').create(body: {
+        'event_id': eventId,
+        'users_id': userId,
+        'status': 'waiting',
+        'read': false, // Default value saat dibuat
+      });
+      print('PocketBaseService: Created event session for user $userId, event $eventId.');
+    } catch (e) {
+      print('Error creating event session: $e');
+      throw Exception('Failed to create event session');
+    }
+  }
+
+  // [BARU] Memeriksa apakah user sudah terdaftar atau sudah mengirim permintaan
+  Future<Map<String, String?>> checkUserRegistrationStatus(String eventId, String userId) async {
+    try {
+      // Cek di event_session terlebih dahulu
+      final sessionRecords = await pb.collection('event_session').getFullList(
+        filter: 'event_id = "$eventId" && users_id = "$userId"',
+      );
+
+      if (sessionRecords.isNotEmpty) {
+        // Jika ada record, kembalikan statusnya ('waiting' atau 'accepted')
+        return {'status': sessionRecords.first.getStringValue('status')};
+      }
+      
+      // Jika tidak ada di session, kembalikan null
+      return {'status': null};
+
+    } catch (e) {
+      print('Error checking registration status: $e');
+      return {'status': null}; // Anggap belum terdaftar jika ada error
+    }
+  }
+
 
 }

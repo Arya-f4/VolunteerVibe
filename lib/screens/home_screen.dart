@@ -1,3 +1,5 @@
+// lib/home_screen.dart
+
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:intl/intl.dart';
@@ -9,6 +11,7 @@ import 'search_screen.dart';
 import 'gamification_screen.dart';
 import 'social_sharing_screen.dart';
 import 'volunteer_hours_screen.dart';
+import 'notification_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   @override
@@ -35,6 +38,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   int _userPoints = 0;
   int _eventsJoined = 0;
   List<RecordModel> _events = [];
+  // [BARU] State untuk menyimpan jumlah notifikasi yang belum dibaca
+  int _unreadNotificationCount = 0;
 
   @override
   void initState() {
@@ -70,11 +75,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  // [MODIFIKASI] Memuat semua data secara paralel untuk efisiensi
   Future<void> _loadInitialData() async {
     setState(() => _isLoading = true);
 
-    await _loadUserData();
-    await _fetchJoinedEvents();
+    await Future.wait([
+      _loadUserData(),
+      _fetchJoinedEvents(),
+      _fetchUnreadNotificationCount(),
+    ]);
 
     if (mounted) {
       setState(() => _isLoading = false);
@@ -86,13 +95,36 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Future<void> _loadUserData() async {
     final userRecord = _pbService.getCurrentUser();
     if (userRecord != null) {
-      _userName = userRecord.data['name'] ?? 'Guest';
-      _userPoints = userRecord.data['points'] ?? 0;
-      final avatarFilename = userRecord.data['avatar'];
-      if (avatarFilename != null && avatarFilename.isNotEmpty) {
-        _userAvatarUrl = _pbService.getFileUrl(userRecord, avatarFilename);
+      if (mounted) {
+        setState(() {
+          _userName = userRecord.data['name'] ?? 'Guest';
+          _userPoints = userRecord.data['points'] ?? 0;
+          final avatarFilename = userRecord.data['avatar'];
+          if (avatarFilename != null && avatarFilename.isNotEmpty) {
+            _userAvatarUrl = _pbService.getFileUrl(userRecord, avatarFilename);
+          }
+        });
       }
       _eventsJoined = await _pbService.getEventsJoinedCount(userRecord.id);
+    }
+  }
+
+  // [BARU] Fungsi untuk mengambil jumlah notifikasi dari service
+  Future<void> _fetchUnreadNotificationCount() async {
+    try {
+      final count = await _pbService.getUnreadNotificationCount();
+      if (mounted) {
+        setState(() {
+          _unreadNotificationCount = count;
+        });
+      }
+    } catch (e) {
+      print("Failed to fetch notification count: $e");
+      if (mounted) {
+        setState(() {
+          _unreadNotificationCount = 0;
+        });
+      }
     }
   }
 
@@ -103,13 +135,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       return;
     }
 
-    if (!_isLoading) setState(() => _isLoading = true);
-
     final joinedEventsResult = await _pbService.fetchJoinedEvents(userId: user.id);
     if (mounted) {
       setState(() {
         _events = joinedEventsResult;
-        _isLoading = false;
       });
     }
   }
@@ -119,13 +148,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return Scaffold(
       backgroundColor: Color(0xFFF8FAFC),
       body: SafeArea(
-        // The content now dynamically changes based on _bottomNavIndex
-        // For index 4, it shows the ProfileScreen content directly.
         child: IndexedStack(
           index: _bottomNavIndex == 4 ? 1 : 0,
           children: [
             _buildHomeContent(),
-            // Pass fromHomeScreen:true so it knows to build without a Scaffold
             ProfileScreen(fromHomeScreen: true),
           ],
         ),
@@ -263,6 +289,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
+  // [MODIFIKASI] Header sekarang menggunakan Stack untuk menampilkan badge notifikasi
   Widget _buildModernHeader() {
     return Row(
       children: [
@@ -312,15 +339,59 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ],
           ),
         ),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: IconButton(
-            icon: Icon(Icons.notifications_outlined, color: Colors.white, size: 24),
-            onPressed: () {},
-          ),
+        // Gunakan Stack untuk menumpuk badge di atas ikon
+        Stack(
+          clipBehavior: Clip.none, // Izinkan badge tampil di luar batas
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: IconButton(
+                icon: Icon(Icons.notifications_outlined, color: Colors.white, size: 24),
+                onPressed: () {
+                  // Saat diklik, navigasi ke halaman notifikasi lalu muat ulang count
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => NotificationScreen()),
+                  ).then((_) {
+                    // Setelah kembali dari halaman notifikasi, perbarui angkanya
+                    _fetchUnreadNotificationCount();
+                  });
+                },
+              ),
+            ),
+            // Tampilkan badge hanya jika ada notifikasi yang belum dibaca
+            if (_unreadNotificationCount > 0)
+              Positioned(
+                top: -4,
+                right: -4,
+                child: Container(
+                  padding: EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Color(0xFF8B5CF6), width: 2),
+                  ),
+                  constraints: BoxConstraints(
+                    minWidth: 20,
+                    minHeight: 20,
+                  ),
+                  child: Center(
+                    child: Text(
+                      '$_unreadNotificationCount',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ],
     );
