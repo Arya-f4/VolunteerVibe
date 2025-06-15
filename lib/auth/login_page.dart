@@ -391,10 +391,6 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
           const SizedBox(height: 12),
           _buildForgotPassword(),
           const SizedBox(height: 24),
-          if (_selectedUserType == UserType.user) ...[
-            _buildSocialLogin(),
-            const SizedBox(height: 20),
-          ],
           _buildRegisterLink(),
           const SizedBox(height: 24),
         ],
@@ -596,101 +592,6 @@ class _LoginPageState extends State<LoginPage> with SingleTickerProviderStateMix
             fontSize: 16,
             fontWeight: FontWeight.w500,
             decoration: TextDecoration.underline,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSocialLogin() {
-    bool anyLoadingInProgress = _isLoading || _isGoogleLoading || _isFacebookLoading || _isInstagramLoading;
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(child: Divider(color: Colors.grey.shade400)),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                'Or sign in with',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey.shade600,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            Expanded(child: Divider(color: Colors.grey.shade400)),
-          ],
-        ),
-        const SizedBox(height: 20),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _buildSocialButton(
-              isLoading: _isGoogleLoading,
-              onPressed: anyLoadingInProgress && !_isGoogleLoading ? (){} : () => _signInWithProvider('google'),
-              child: Image.asset('assets/google-logo.png', width: 24, height: 24, errorBuilder: (c,e,s) => const Icon(Icons.error, color: Colors.red)),
-            ),
-            const SizedBox(width: 24),
-            _buildSocialButton(
-              isLoading: _isFacebookLoading,
-              onPressed: anyLoadingInProgress && !_isFacebookLoading ? (){} : () => _signInWithProvider('facebook'),
-              backgroundColor: const Color(0xFF1877F2),
-              child: const Icon(Icons.facebook, color: Colors.white, size: 24),
-            ),
-            const SizedBox(width: 24),
-            _buildSocialButton(
-              isLoading: _isInstagramLoading,
-              onPressed: anyLoadingInProgress && !_isInstagramLoading ? (){} : _signInWithInstagram,
-              child: Image.asset('assets/instagram-logo.png', width: 24, height: 24, errorBuilder: (c,e,s) => const Icon(Icons.camera_alt_outlined, color: Colors.grey)),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSocialButton({
-    Widget? child,
-    Color? backgroundColor,
-    required VoidCallback onPressed,
-    bool isLoading = false,
-  }) {
-    return Container(
-      width: 54,
-      height: 54,
-      decoration: BoxDecoration(
-        color: backgroundColor ?? Colors.white,
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 6,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: isLoading ? null : onPressed,
-          borderRadius: BorderRadius.circular(27),
-          child: Center(
-            child: isLoading
-                ? SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.0,
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        (backgroundColor == Colors.white || backgroundColor == null)
-                            ? Theme.of(context).primaryColorDark
-                            : Colors.white,
-                      ),
-                    ),
-                  )
-                : child,
           ),
         ),
       ),

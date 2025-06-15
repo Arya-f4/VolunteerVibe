@@ -236,8 +236,6 @@ class _RegisterPageState extends State<RegisterPage> with SingleTickerProviderSt
                 const SizedBox(height: 24),
                 _buildSignupButton(),
                 const SizedBox(height: 24),
-                _buildSocialLogin(),
-                const SizedBox(height: 24),
                 _buildLoginLink(),
                 const SizedBox(height: 24),
               ],
@@ -635,70 +633,6 @@ class _RegisterPageState extends State<RegisterPage> with SingleTickerProviderSt
                 ),
               ),
       ),
-    );
-  }
-
-  Widget _buildSocialLogin() {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(child: Divider(color: Colors.grey.shade400)),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                'Or sign up with',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey.shade600,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            Expanded(child: Divider(color: Colors.grey.shade400)),
-          ],
-        ),
-        const SizedBox(height: 20),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _buildSocialButton(
-              isLoading: _isGoogleLoading,
-              child: Container(
-                width: 24,
-                height: 24,
-                decoration: const BoxDecoration(shape: BoxShape.circle),
-                child: Image.asset(
-                  'assets/google-logo.png',
-                  errorBuilder: (c, e, s) => const Icon(Icons.error, color: Colors.red),
-                ),
-              ),
-              onPressed: _signInWithGoogle,
-            ),
-            const SizedBox(width: 24),
-            _buildSocialButton(
-              isLoading: _isFacebookLoading,
-              backgroundColor: const Color(0xFF1877F2),
-              child: const Icon(Icons.facebook, color: Colors.white, size: 24),
-              onPressed: _signInWithFacebook,
-            ),
-            const SizedBox(width: 24),
-            _buildSocialButton(
-              isLoading: _isInstagramLoading,
-              backgroundColor: Colors.white, 
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: Image.asset(
-                  'assets/instagram-logo.png', 
-                  errorBuilder: (c,e,s) => const Icon(Icons.camera_alt_outlined, color: Colors.grey),
-                ),
-              ),
-              onPressed: _signInWithInstagram,
-            ),
-          ],
-        ),
-      ],
     );
   }
 
